@@ -10,6 +10,7 @@ Class TIONavigationManagerClass(NSInteger mode);
 @property(nonatomic,readonly) NSInteger naviMode;
 @property(nonatomic,readonly) AMapNaviRoute *naviRoute;
 @property(nonatomic) BOOL isUseInternalTTS,screenAlwaysBright,allowsBackgroundLocationUpdates;
+@property(nonatomic) BOOL pausesLocationUpdatesAutomatically;
 - (void)addDataRepresentative:(id)delegate;
 - (void)removeDataRepresentative:(id)delegate;
 - (BOOL)startEmulatorNavi;
