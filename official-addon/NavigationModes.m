@@ -2,7 +2,7 @@
 #if TIO_AMAP_ENABLED
 #import <AMapNaviKit/AMapNaviKit.h>
 #endif
-NSArray *TIONavigationModeTitles(void){return @[@"步行",@"骑行",@"驾车"];}
+NSArray *TIONavigationModeTitles(void){return @[@"Walk",@"Bike",@"Drive"];}
 NSString *TIONavigationModeTitle(NSInteger mode){return mode>=0&&mode<3?TIONavigationModeTitles()[mode]:nil;}
 Class TIONavigationManagerClass(NSInteger mode){
     if(!TIONavigationModeTitle(mode))return Nil;

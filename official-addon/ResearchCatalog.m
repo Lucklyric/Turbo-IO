@@ -2,24 +2,24 @@
 static NSDictionary *Row(NSString *key,NSString *title,NSString *icon,NSInteger section,NSInteger row){return @{@"key":key,@"title":title,@"icon":icon,@"section":@(section),@"row":@(row)};}
 NSArray<NSDictionary *> *TIOResearchSections(NSString *page){
     if([page isEqual:@"model"])return @[
-        @{@"title":@"自定义 Agents 控制",@"rows":@[Row(@"agent",@"执行 Agent",@"cpu",-2,0),Row(@"knowledge",@"知识库与来源",@"books.vertical",-2,1)]},
-        @{@"title":@"回答方式",@"rows":@[Row(@"mode",@"当前回答方式",@"square.stack.3d.up",0,0)]},
-        @{@"title":@"自有模型",@"rows":@[Row(@"api",@"接口与密钥",@"cube",0,1),Row(@"thinking",@"关闭深度思考",@"bolt",0,3),Row(@"effort",@"推理强度 · OpenAI",@"gauge.medium",-6,0)]},
-        @{@"title":@"联网与工具",@"rows":@[Row(@"search",@"允许联网搜索",@"globe",0,7),Row(@"searchKey",@"搜索服务配置",@"key",0,8),Row(@"tools",@"模型可用工具",@"wrench.and.screwdriver",0,11)]},
-        @{@"title":@"语音与上下文",@"rows":@[Row(@"exit",@"语音退出",@"waveform",0,6),Row(@"prompt",@"个人资料与提示词",@"text.bubble",0,5),Row(@"history",@"本次对话上下文",@"clock.arrow.circlepath",0,4)]}];
+        @{@"title":@"Custom Agent Controls",@"rows":@[Row(@"agent",@"Execution Agent",@"cpu",-2,0),Row(@"knowledge",@"Knowledge Base & Sources",@"books.vertical",-2,1)]},
+        @{@"title":@"Answer Mode",@"rows":@[Row(@"mode",@"Current Answer Mode",@"square.stack.3d.up",0,0)]},
+        @{@"title":@"Own Model",@"rows":@[Row(@"api",@"Endpoint & API Key",@"cube",0,1),Row(@"thinking",@"Disable Deep Thinking",@"bolt",0,3),Row(@"effort",@"Reasoning Effort · OpenAI",@"gauge.medium",-6,0)]},
+        @{@"title":@"Tools",@"rows":@[Row(@"tools",@"Model Tools",@"wrench.and.screwdriver",0,11)]},
+        @{@"title":@"Voice & Context",@"rows":@[Row(@"exit",@"Voice Exit",@"waveform",0,6),Row(@"prompt",@"Profile & Prompt",@"text.bubble",0,5),Row(@"history",@"Current Chat Context",@"clock.arrow.circlepath",0,4)]}];
     if([page isEqual:@"library"])return @[
-        @{@"title":@"地图与眼镜导航",@"rows":@[Row(@"navigation",@"步行 / 骑行 / 驾车导航",@"map",-3,0)]},
-        @{@"title":@"录音与整理",@"rows":@[Row(@"recordings",@"录音与文件分享",@"waveform",-1,0),Row(@"summary",@"转写文字整理",@"text.badge.star",-1,1)]},
-        @{@"title":@"全天智记",@"rows":@[Row(@"lifelogText",@"已保存文字",@"doc.text",-1,2),Row(@"lifelogAudio",@"音频保存与分享",@"waveform.circle",-1,3),Row(@"capture",@"保存之后的最终文字",@"square.and.arrow.down",1,0),Row(@"archive",@"导出文字归档",@"square.and.arrow.up",1,1)]}];
+        @{@"title":@"Maps & Glasses Navigation",@"rows":@[Row(@"navigation",@"Walking / Cycling / Driving Navigation",@"map",-3,0)]},
+        @{@"title":@"Recordings & Summaries",@"rows":@[Row(@"recordings",@"Recordings & File Sharing",@"waveform",-1,0),Row(@"summary",@"Transcript Summary",@"text.badge.star",-1,1)]},
+        @{@"title":@"Lifelog",@"rows":@[Row(@"lifelogText",@"Saved Text",@"doc.text",-1,2),Row(@"lifelogAudio",@"Audio Saving & Sharing",@"waveform.circle",-1,3),Row(@"capture",@"Save Future Final Text",@"square.and.arrow.down",1,0),Row(@"archive",@"Export Text Archive",@"square.and.arrow.up",1,1)]}];
     if([page isEqual:@"diagnostics"])return @[
 #if TIO_OTA_RESEARCH_ENABLED
 #if TIO_NATIVE_NAV
-        @{@"title":@"TNV1 研究固件 · 有变砖风险",@"rows":@[Row(@"experimentalOTA",@"TNV1 导航固件 · 默认锁定",@"exclamationmark.shield",-4,0),Row(@"displayPhone",@"Turbo Display · 传图测试",@"rectangle.connected.to.line.below",-4,1)]},
+        @{@"title":@"TNV1 Research Firmware · Bricking Risk",@"rows":@[Row(@"experimentalOTA",@"TNV1 Navigation Firmware · Locked by Default",@"exclamationmark.shield",-4,0),Row(@"displayPhone",@"Turbo Display · Image Transfer Test",@"rectangle.connected.to.line.below",-4,1)]},
 #else
-        @{@"title":@"高风险固件实验 · 非日常使用",@"rows":@[Row(@"experimentalOTA",@"R3 试验用品 · 先阅读风险",@"exclamationmark.shield",-4,0)]},
+        @{@"title":@"High-Risk Firmware Tests · Not for Daily Use",@"rows":@[Row(@"experimentalOTA",@"R3 Test Build · Read the Risks First",@"exclamationmark.shield",-4,0)]},
 #endif
 #endif
-        @{@"title":@"运行状态",@"rows":@[Row(@"status",@"适配与回调",@"checkmark.shield",2,0)]},
-        @{@"title":@"手动测试",@"rows":@[Row(@"apiTest",@"测试模型接口",@"bubble.left.and.bubble.right",0,2),Row(@"searchTest",@"测试联网搜索",@"globe",0,9),Row(@"todoTest",@"待办协议验收",@"checklist",0,10)]}];
+        @{@"title":@"Runtime Status",@"rows":@[Row(@"status",@"Compatibility & Callbacks",@"checkmark.shield",2,0)]},
+        @{@"title":@"Manual Tests",@"rows":@[Row(@"apiTest",@"Test Model Endpoint",@"bubble.left.and.bubble.right",0,2),Row(@"todoTest",@"To-dos Protocol Check",@"checklist",0,10)]}];
     return @[];
 }

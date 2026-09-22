@@ -43,14 +43,14 @@ extern void TIOProtocolRuntimeFixture(void);
         if([args containsObject:@"--navigation"]){UIViewController *page=TIONavigationController();[nav pushViewController:page animated:NO];[page loadViewIfNeeded];if([args containsObject:@"--navigation-fixture"])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{[page performSelector:NSSelectorFromString(@"startFixture")];});}
         if([args containsObject:@"--navigation-modes-check"]){
             UIViewController *p=nav.topViewController;UISegmentedControl *m=[p valueForKey:@"transportMode"],*travel=[p valueForKey:@"travelMode"];
-            NSCAssert(m.numberOfSegments==3&&[[m titleForSegmentAtIndex:1] isEqual:@"骑行"]&&[[m titleForSegmentAtIndex:2] isEqual:@"驾车"],@"Three real transport choices");
+            NSCAssert(m.numberOfSegments==3&&[[m titleForSegmentAtIndex:1] isEqual:@"Bike"]&&[[m titleForSegmentAtIndex:2] isEqual:@"Drive"],@"Three real transport choices");
             [p performSelector:NSSelectorFromString(@"selectPlace:") withObject:@{@"name":@"模式测试终点",@"lat":@39.9143,@"lon":@116.4112}];
             NSValue *end=[p valueForKey:@"destination"];
             for(NSInteger mode=0;mode<3;mode++){
                 m.selectedSegmentIndex=mode;[m sendActionsForControlEvents:UIControlEventValueChanged];
                 NSCAssert([[p valueForKey:@"selectedTransport"] integerValue]==mode&&[end isEqual:[p valueForKey:@"destination"]],@"Switch preserves destination");
                 travel.selectedSegmentIndex=1;[travel sendActionsForControlEvents:UIControlEventValueChanged];UIButton *b=[p valueForKey:@"beginButton"];
-                NSCAssert([b.configuration.title isEqual:[@"开始" stringByAppendingString:[m titleForSegmentAtIndex:mode]]],@"GPS action reflects selected engine");
+                NSCAssert([b.configuration.title isEqual:[@"Start " stringByAppendingString:[m titleForSegmentAtIndex:mode]]],@"GPS action reflects selected engine");
             }
             [p setValue:@YES forKey:@"active"];[p setValue:@YES forKey:@"routeReady"];m.selectedSegmentIndex=1;[m sendActionsForControlEvents:UIControlEventValueChanged];
             NSCAssert(![[p valueForKey:@"active"] boolValue]&&![[p valueForKey:@"routeReady"] boolValue],@"Ready route invalidated on mode change");

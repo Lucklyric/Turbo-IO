@@ -20,16 +20,16 @@ static BOOL IsExportRow(id self,UITableView *table,NSIndexPath *ip){
 static id Cell(id self,SEL cmd,UITableView *table,NSIndexPath *ip){
     if(!IsExportRow(self,table,ip))return PriorCell(self,cmd,table,ip);
     UITableViewCell *cell=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    cell.textLabel.text=@"录音与文本分享";
-    cell.detailTextLabel.text=@"音频 AirDrop / 存储到文件 · TXT/MD 导入分享";
-    cell.detailTextLabel.numberOfLines=0;
+    cell.textLabel.text=@"Share Recordings & Text";
+    cell.detailTextLabel.text=@"Audio via AirDrop / Save to Files · Import and share TXT/MD";
+    cell.textLabel.numberOfLines=0;cell.detailTextLabel.numberOfLines=0;
     cell.imageView.image=[UIImage systemImageNamed:@"square.and.arrow.up"];
     cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     return cell;
 }
-static id Header(id self,SEL cmd,id table,NSInteger section){return section==1?@"录音与文本导出":PriorHeader(self,cmd,table,section);}
+static id Header(id self,SEL cmd,id table,NSInteger section){return section==1?@"Recording & Text Export":PriorHeader(self,cmd,table,section);}
 static id Footer(id self,SEL cmd,id table,NSInteger section){
-    if(section==1)return @"旁路文字只含开启后收到的全天智记。音频分享使用官方已准备的本机文件，不删原件。当前录音全文的自动 Markdown 导出尚未接通。";
+    if(section==1)return @"Side-channel text includes only Always-On Notes received after it was turned on. Audio sharing uses local files prepared by the official app; originals are not deleted. Automatic Markdown export of the full current transcript isn't available yet.";
     return PriorFooter(self,cmd,table,section);
 }
 static void Select(id self,SEL cmd,UITableView *table,NSIndexPath *ip){

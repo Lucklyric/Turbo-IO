@@ -35,8 +35,6 @@ xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-incompatible-pointer-types -
 ./build/alwayson-ogg-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation WebSearch.m OpenAIResponses.m WebSearchTests.m -o build/web-search-tests
 ./build/web-search-tests
-xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m OpenAIResponses.m WebSearchFlowTests.m -o build/web-search-flow-tests
-./build/web-search-flow-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation TodoBridgeClient.m TodoBridgeClientTests.m -o build/todo-bridge-client-tests
 ./build/todo-bridge-client-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m OpenAIResponses.m TodoToolFlowTests.m -o build/todo-tool-flow-tests

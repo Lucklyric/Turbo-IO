@@ -14,12 +14,12 @@ NSArray<NSDictionary *> *TIOAOAudioFiles(NSURL *home){
         if([v[NSURLIsSymbolicLinkKey] boolValue]||!Inside(f,root)){[files skipDescendants];continue;}
         if([v[NSURLIsDirectoryKey] boolValue]){if(f.pathComponents.count>root.pathComponents.count+2)[files skipDescendants];continue;}
         if(![@[@"opus",@"ogg",@"pcm"] containsObject:f.pathExtension.lowercaseString]||!Regular(f))continue;
-        NSString *name=f.lastPathComponent;NSString *kind=[name.lowercaseString containsString:@"cached"]?@"缓存音频":([name.lowercaseString containsString:@"realtime"]?@"实时音频":@"智记调试音频（来源待核对）");
+        NSString *name=f.lastPathComponent;NSString *kind=[name.lowercaseString containsString:@"cached"]?@"Cached Audio":([name.lowercaseString containsString:@"realtime"]?@"Realtime Audio":@"Notes Debug Audio (Source Unverified)");
         [rows addObject:@{@"url":f,@"name":name,@"kind":kind,@"date":v[NSURLContentModificationDateKey]?:NSDate.distantPast,@"bytes":v[NSURLFileSizeKey]?:@0}];if(rows.count>=500)break;
     }
     [rows sortUsingComparator:^NSComparisonResult(id a,id b){return [b[@"date"] compare:a[@"date"]];}];return rows;
 }
-static NSError *AudioError(void){return [NSError errorWithDomain:@"TurboIOAlwaysOnAudio" code:1 userInfo:@{NSLocalizedDescriptionKey:@"无法生成稳定的智记音频副本。请先停止本次全天智记，再刷新重试；原文件未改。"}];}
+static NSError *AudioError(void){return [NSError errorWithDomain:@"TurboIOAlwaysOnAudio" code:1 userInfo:@{NSLocalizedDescriptionKey:@"Couldn't create a stable audio copy. Stop the current Always-On Notes session, then refresh and retry. The original file is unchanged."}];}
 NSURL *TIOAOAudioCopy(NSURL *home,NSURL *source,NSError **error){
     if(!source.isFileURL||!Regular(source)){if(error)*error=AudioError();return nil;}
     BOOL found=NO;for(NSDictionary *r in TIOAOAudioFiles(home))if([[(NSURL *)r[@"url"] URLByResolvingSymlinksInPath].path isEqual:[source URLByResolvingSymlinksInPath].path])found=YES;

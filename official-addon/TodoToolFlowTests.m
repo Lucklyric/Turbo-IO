@@ -44,13 +44,12 @@ static void Run(NSString *scenario){
         if([scenario isEqual:@"cancel-pending"]){Pending=[completion copy];done=YES;return;}
         completion(@{@"status":ResultStatus,@"wireId":@"private-not-for-model"});if([scenario isEqual:@"duplicate-callback"])completion(@{@"status":@"unknown"});
     };
-    BOOL search=[@[@"mixed",@"search-write"] containsObject:scenario];
-    [r startEndpoint:[NSURL URLWithString:@"https://model.example/chat/completions"] key:@"synthetic-model-key" payload:TIOChatRequest(@"test",@"创建待办：合成事项") searchKey:search?@"synthetic-search-key":@""];
+    [r startEndpoint:[NSURL URLWithString:@"https://model.example/chat/completions"] key:@"synthetic-model-key" payload:TIOChatRequest(@"test",@"创建待办：合成事项")];
     NSDate *until=[NSDate dateWithTimeIntervalSinceNow:3];while(!done&&until.timeIntervalSinceNow>0)[NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.01]];assert(done);
     if([scenario isEqual:@"cancel-before"]){assert(Writes==0&&finals==0);return;}
     if([scenario isEqual:@"cancel-pending"]){[r cancel];Pending(@{@"status":@"created"});for(int i=0;i<10;i++)[NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:.01]];assert(Writes==1&&Models==1&&finals==0);Pending=nil;return;}
     assert(finals==1);
-    if([@[@"disabled",@"batch",@"mixed",@"search-write"] containsObject:scenario]){assert(error&&Writes==0);if([scenario isEqual:@"search-write"])assert(Searches==1);else assert(Searches==0);}
+    if([@[@"disabled",@"batch",@"mixed",@"search-write"] containsObject:scenario]){assert(error&&Writes==0);assert(Searches==0);}
     else if([scenario isEqual:@"repeat"])assert(error&&Writes==1&&Models==2);
     else assert(!error&&Writes==1&&Models==2);
 }

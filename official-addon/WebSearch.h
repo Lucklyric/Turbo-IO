@@ -1,12 +1,9 @@
 #import <Foundation/Foundation.h>
 NS_ASSUME_NONNULL_BEGIN
-FOUNDATION_EXPORT NSDictionary *TIOWebSearchTool(void);
 FOUNDATION_EXPORT NSDictionary *TIOTodoCreateTool(void);
 FOUNDATION_EXPORT NSDictionary *TIOKnowledgeTool(BOOL statusOnly);
 FOUNDATION_EXPORT NSDictionary * _Nullable TIOKnowledgeArguments(NSString *arguments,BOOL statusOnly);
 FOUNDATION_EXPORT NSString * _Nullable TIOTodoToolTitle(NSString *arguments);
-FOUNDATION_EXPORT NSString * _Nullable TIOWebSearchQuery(NSString *arguments);
-FOUNDATION_EXPORT NSDictionary * _Nullable TIOWebSearchResults(NSData *data);
 @interface TIOWebStream : NSObject
 @property(nonatomic,readonly) BOOL done;
 @property(nonatomic,readonly) BOOL failed;
@@ -24,7 +21,7 @@ FOUNDATION_EXPORT NSDictionary * _Nullable TIOWebSearchResults(NSData *data);
 @property(nonatomic,copy,nullable) void (^createTodo)(NSString *title, void (^completion)(NSDictionary *result));
 @property(nonatomic,copy,nullable) void (^knowledgeQuery)(NSDictionary *input,BOOL statusOnly,void (^completion)(NSDictionary *result));
 @property(nonatomic,copy,nullable) void (^cancelKnowledge)(void);
-- (void)startEndpoint:(NSURL *)url key:(NSString *)key payload:(NSDictionary *)payload searchKey:(NSString *)searchKey;
+- (void)startEndpoint:(NSURL *)url key:(NSString *)key payload:(NSDictionary *)payload;
 - (void)cancel;
 @end
 NS_ASSUME_NONNULL_END

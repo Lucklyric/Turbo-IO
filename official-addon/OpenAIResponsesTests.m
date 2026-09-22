@@ -14,7 +14,7 @@ static NSData *SSE(NSArray<NSDictionary *> *events) {
 static NSDictionary *ChatBody(void) {
     return @{@"model": @"gpt-6-astra", @"stream": @YES, @"max_tokens": @1024,
              @"messages": @[@{@"role": @"system", @"content": @"sys"}, @{@"role": @"user", @"content": @"hi"}],
-             @"tools": @[TIOTodoCreateTool(), TIOWebSearchTool()], @"tool_choice": @"auto",
+             @"tools": @[TIOTodoCreateTool(), @{@"type":@"function",@"function":@{@"name":@"web_search",@"parameters":@{@"type":@"object"}}}], @"tool_choice": @"auto",
              @"parallel_tool_calls": @NO};
 }
 
@@ -68,7 +68,7 @@ static void TestKnowledgeBlocksHostedSearch(void) {
 
 static void TestForcedSearchBecomesRequired(void) {
     NSMutableDictionary *chat = [ChatBody() mutableCopy];
-    chat[@"tools"] = @[TIOWebSearchTool()];
+    chat[@"tools"] = @[@{@"type":@"function",@"function":@{@"name":@"web_search",@"parameters":@{@"type":@"object"}}}];
     chat[@"tool_choice"] = @{@"type": @"function", @"function": @{@"name": @"web_search"}};
     assert([TIOResponsesBody(chat, YES)[@"tool_choice"] isEqual:@"required"]);
     NSLog(@"PASS: news mode's forced search maps to tool_choice required");

@@ -27,15 +27,15 @@ NSDictionary *TIOSubtitleStopContract(NSDictionary *j,NSString *sid){
 }
 @implementation TIOSubtitleTrial { NSDictionary *_stop; BOOL _navigation; }
 - (BOOL)navigation{return _navigation;}
-- (instancetype)init{if((self=[super init])){_phase=@"idle";_note=@"等待官方预览与退出样本";}return self;}
+- (instancetype)init{if((self=[super init])){_phase=@"idle";_note=@"Waiting for official preview and exit samples";}return self;}
 - (BOOL)active{return [@[@"starting",@"ready",@"stopping",@"uncertain"] containsObject:self.phase];}
 - (void)mark:(NSString *)phase note:(NSString *)note{self.phase=phase;self.note=note;if(self.changed)self.changed();}
 - (BOOL)startWithPreview:(NSDictionary *)preview stop:(NSDictionary *)stop now:(NSTimeInterval)now{
     if(self.active||!self.send||![preview isKindOfClass:NSDictionary.class]||![stop isKindOfClass:NSDictionary.class]||![preview[@"scope"] isEqual:@"temporary"]||![preview[@"config"] isKindOfClass:NSDictionary.class]||![preview[@"config"][@"is_display"] isEqual:@YES]||[preview[@"force"] boolValue]||![preview[@"sid"] isKindOfClass:NSString.class]||![stop[@"sid"] isEqual:preview[@"sid"]])return NO;
     _navigation=NO;_stop=[stop copy];self.sid=[NSUUID.UUID.UUIDString.lowercaseString stringByReplacingOccurrencesOfString:@"-" withString:@""];self.began=now;self.deadline=now+10;self.frame=0;self.audioPackets=0;self.lastText=0;
     NSMutableDictionary *j=[preview mutableCopy];j[@"sid"]=self.sid;j[@"scope"]=@"temporary";j[@"force"]=@NO;
-    [self mark:@"starting" note:@"已提交临时预览，等待同 SID 回执；尚未发导航文字"];
-    if(!self.send(7,j)){[self stop:@"预览提交失败，结果未知" now:now];return NO;}return YES;
+    [self mark:@"starting" note:@"Temporary preview submitted, waiting for same-SID receipt. No navigation text sent yet"];
+    if(!self.send(7,j)){[self stop:@"Preview submit failed, result unknown" now:now];return NO;}return YES;
 }
 - (BOOL)nextAt:(NSTimeInterval)now{
     if(_navigation||![self.phase isEqual:@"ready"]||self.frame>=3||(self.frame&&now-self.lastText<3)||now-self.began>=240)return NO;
@@ -44,8 +44,8 @@ NSDictionary *TIOSubtitleStopContract(NSDictionary *j,NSString *sid){
     // changing partial sentence, not final-history accumulation or ASR startup.
     NSDictionary *j=@{@"sid":self.sid,@"mode":@3,@"status":@0,@"content":@{@"source_transcript":frames[self.frame]}};
     self.lastText=now;self.frame++;
-    if(!self.send(5,j)){[self stop:@"文字提交失败" now:now];return NO;}
-    [self mark:@"ready" note:[NSString stringWithFormat:@"第%lu段已提交（不是镜片回执）；请检查覆盖/追加、loading和常亮",(unsigned long)self.frame]];return YES;
+    if(!self.send(5,j)){[self stop:@"Text submit failed" now:now];return NO;}
+    [self mark:@"ready" note:[NSString stringWithFormat:@"Segment %lu submitted (not a glasses receipt). Check overwrite/append, loading, and always-on",(unsigned long)self.frame]];return YES;
 }
 - (BOOL)startNavigationWithPreview:(NSDictionary *)p stop:(NSDictionary *)s now:(NSTimeInterval)now{
     if(![self startWithPreview:p stop:s now:now])return NO;_navigation=YES;return YES;
@@ -53,31 +53,31 @@ NSDictionary *TIOSubtitleStopContract(NSDictionary *j,NSString *sid){
 - (BOOL)sendNavigationText:(NSString *)text now:(NSTimeInterval)now{
     if(!_navigation||![self.phase isEqual:@"ready"]||self.frame>=80||now-self.began>=240||(self.frame&&now-self.lastText<3)||![text isKindOfClass:NSString.class]||!text.length||[text lengthOfBytesUsingEncoding:NSUTF8StringEncoding]>384)return NO;
     self.lastText=now;self.frame++;
-    if(!self.send(5,@{@"sid":self.sid,@"mode":@3,@"status":@0,@"content":@{@"source_transcript":text}})){[self stop:@"导航文字提交失败" now:now];return NO;}
-    [self mark:@"ready" note:@"导航文字已提交，非镜片渲染确认"];return YES;
+    if(!self.send(5,@{@"sid":self.sid,@"mode":@3,@"status":@0,@"content":@{@"source_transcript":text}})){[self stop:@"Navigation text submit failed" now:now];return NO;}
+    [self mark:@"ready" note:@"Navigation text submitted (not a glasses render confirmation)"];return YES;
 }
 - (void)receive:(NSDictionary *)e now:(NSTimeInterval)now{
     if(!self.active)return;
-    if([e[@"type"] isEqual:@4]){self.audioPackets++;[self stop:@"同设备字幕音频消息出现，已停止纯显示实验" now:now];if(self.changed)self.changed();return;}
+    if([e[@"type"] isEqual:@4]){self.audioPackets++;[self stop:@"Subtitle audio message on this device, display-only test stopped" now:now];if(self.changed)self.changed();return;}
     NSDictionary *j=e[@"json"];if(![j[@"sid"] isEqual:self.sid])return;
     if([e[@"type"] isEqual:@8]&&[self.phase isEqual:@"starting"]){
         id code=j[@"code"];BOOL ok=[code isKindOfClass:NSNumber.class]&&CFGetTypeID((__bridge CFTypeRef)code)!=CFBooleanGetTypeID()&&([code isEqual:@1]||[code isEqual:@2]);
-        if(ok)[self mark:@"ready" note:@"同 SID 设置回执已收到；点发送A，不代表文字可见或无录音"];
-        else [self stop:@"预览回执拒绝或格式未知，不强制抢占" now:now];
+        if(ok)[self mark:@"ready" note:@"Same-SID settings receipt received. Tap Send A. This does not confirm visible text or no recording"];
+        else [self stop:@"Preview receipt rejected or unknown format, not forcing takeover" now:now];
     }
     // Keep an inbound type3 as evidence only until its direction/semantics are
     // verified. Never declare clean exit merely because send() returned success.
-    if([e[@"type"] isEqual:@3]){[self stop:@"收到同 SID 停止消息；请确认镜片已退出" now:now];}
+    if([e[@"type"] isEqual:@3]){[self stop:@"Received same-SID stop message. Confirm the glasses exited" now:now];}
 }
 - (void)stop:(NSString *)reason now:(NSTimeInterval)now{
     if(!self.active||[self.phase isEqual:@"stopping"]||[self.phase isEqual:@"uncertain"])return;
-    self.deadline=now+8;[self mark:@"stopping" note:[reason stringByAppendingString:@"；已请求退出，镜片未确认"]];
+    self.deadline=now+8;[self mark:@"stopping" note:[reason stringByAppendingString:@". Exit requested, not confirmed on glasses"]];
     NSMutableDictionary *j=[_stop mutableCopy];j[@"sid"]=self.sid;
-    if(!self.send(3,j))[self mark:@"uncertain" note:@"退出无法提交，请用眼镜按钮退出；禁止再次开始"];
+    if(!self.send(3,j))[self mark:@"uncertain" note:@"Exit could not be submitted. Use the glasses button to exit. Do not start again"];
 }
 - (void)tick:(NSTimeInterval)now{
-    if([self.phase isEqual:@"starting"]&&now>=self.deadline)[self stop:@"10秒无匹配设置回执" now:now];
-    if([self.phase isEqual:@"ready"]&&now-self.began>=240)[self stop:@"4分钟保护到期" now:now];
-    if([self.phase isEqual:@"stopping"]&&now>=self.deadline)[self mark:@"uncertain" note:@"退出效果待确认；请用实体按钮退出，并在页面确认后再试"];
+    if([self.phase isEqual:@"starting"]&&now>=self.deadline)[self stop:@"No matching settings receipt in 10 s" now:now];
+    if([self.phase isEqual:@"ready"]&&now-self.began>=240)[self stop:@"4-minute limit reached" now:now];
+    if([self.phase isEqual:@"stopping"]&&now>=self.deadline)[self mark:@"uncertain" note:@"Exit not confirmed. Use the physical button to exit, then confirm on this page before retrying"];
 }
 @end
