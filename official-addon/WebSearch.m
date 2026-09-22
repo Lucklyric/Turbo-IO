@@ -1,4 +1,5 @@
 #import "WebSearch.h"
+#import "OpenAIResponses.h"
 static NSString *Text(id x){return [x isKindOfClass:NSString.class]?x:@"";}
 NSDictionary *TIOKnowledgeTool(BOOL statusOnly){return @{@"type":@"function",@"function":@{@"name":statusOnly?@"knowledge_query_status":@"knowledge_query",@"description":statusOnly?@"读取上一次Codex知识库查询结果，不重复创建查询。":@"用户问自己的微信聊天、项目进展或知识库资料时，交给Mac上的Codex只读检索。不是互联网搜索，不支持写入或刷新微信。只能根据工具真实状态回答，queued/running不代表已完成。",@"parameters":@{@"type":@"object",@"properties":statusOnly?@{}:@{@"query":@{@"type":@"string",@"minLength":@2,@"maxLength":@200},@"source":@{@"type":@"string",@"enum":@[@"all",@"wechat",@"projects",@"learning"]}},@"required":statusOnly?@[]:@[@"query",@"source"],@"additionalProperties":@NO}}};}
 NSDictionary *TIOKnowledgeArguments(NSString *raw,BOOL statusOnly){if(![raw isKindOfClass:NSString.class]||raw.length>2000)return nil;id j=[NSJSONSerialization JSONObjectWithData:[raw dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];if(![j isKindOfClass:NSDictionary.class])return nil;if(statusOnly)return [j count]==0?j:nil;NSString *q=Text(j[@"query"]),*source=Text(j[@"source"]);if([j count]!=2||q.length<2||q.length>200||[q rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location!=NSNotFound||![@[@"all",@"wechat",@"projects",@"learning"] containsObject:source])return nil;return j;}
@@ -117,18 +118,20 @@ NSDictionary *TIOWebSearchResults(NSData *data){return SearchResults(data,5,1500
     [self modelRound];
 }
 - (void)modelRound{
-    if(_finished)return;if(++_rounds>3){[self finish:@"达到本轮搜索上限，已停止。"];return;}_searching=NO;_parser=[TIOWebStream new];
+    if(_finished)return;if(++_rounds>3){[self finish:@"达到本轮搜索上限，已停止。"];return;}_searching=NO;_parser=TIOIsOpenAI(_endpoint)?[TIOResponsesStream new]:[TIOWebStream new];
     NSMutableDictionary *body=[_payload mutableCopy];body[@"messages"]=_messages;
     NSMutableArray *registered=[NSMutableArray new];if(_searchKey.length)[registered addObject:TIOWebSearchTool()];if(_createTodo)[registered addObject:TIOTodoCreateTool()];
     if(_knowledgeQuery&&!_newsMode){[registered addObject:TIOKnowledgeTool(NO)];[registered addObject:TIOKnowledgeTool(YES)];}
     if(registered.count){body[@"tools"]=registered;body[@"tool_choice"]=(_todoAttempted||_knowledgeAttempted||(_searchCount>=2))?@"none":@"auto";body[@"parallel_tool_calls"]=@NO;}
     if(_newsMode&&_rounds==1)body[@"tool_choice"]=@{@"type":@"function",@"function":@{@"name":@"web_search"}};
-    NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:_endpoint];r.HTTPMethod=@"POST";r.timeoutInterval=45;r.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    NSURL *wire=_endpoint;if(TIOIsOpenAI(_endpoint)){body=[TIOResponsesBody(body,YES) mutableCopy];wire=TIOResponsesURL(_endpoint);}
+    NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:wire];r.HTTPMethod=@"POST";r.timeoutInterval=90;r.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
     [r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];[r setValue:@"text/event-stream" forHTTPHeaderField:@"Accept"];[r setValue:[@"Bearer " stringByAppendingString:_key] forHTTPHeaderField:@"Authorization"];
     _task=[_session dataTaskWithRequest:r];[_task resume];
 }
 - (void)publish:(NSString *)text{_display=text;void (^callback)(NSString *,BOOL,NSString *)=[_update copy];if(callback)callback(text,NO,nil);}
 - (void)modelFinished{
+    if([_parser isKindOfClass:TIOResponsesStream.class])_searchCount+=((TIOResponsesStream *)_parser).hostedSearches;
     NSArray *calls=_parser.calls;[self publish:[_prefix stringByAppendingString:_parser.answer]];
     if(!calls.count){[self finish:(_newsMode&&!_searchCount)?@"本批未实际搜索，不作为新闻发布。":nil];return;}
     NSUInteger writes=0,searches=0,knowledge=0;for(NSDictionary *call in calls){NSString *name=call[@"function"][@"name"];if([name isEqual:@"create_todo"])writes++;else if([name hasPrefix:@"knowledge_query"])knowledge++;else searches++;}
@@ -165,19 +168,21 @@ NSDictionary *TIOWebSearchResults(NSData *data){return SearchResults(data,5,1500
     NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:u.URL];r.timeoutInterval=20;[r setValue:_searchKey forHTTPHeaderField:@"X-API-Key"];[r setValue:@"application/json" forHTTPHeaderField:@"Accept"];
     _task=[_session dataTaskWithRequest:r];[_task resume];
 }
+static NSMutableData *TIOModelErrorBody;static NSInteger TIOModelErrorCode;
 - (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t willPerformHTTPRedirection:(NSHTTPURLResponse *)r newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))handler{handler(nil);if(t==_task)[self finish:@"服务重定向已拒绝，未转发密钥。"];}
 - (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveResponse:(NSURLResponse *)r completionHandler:(void (^)(NSURLSessionResponseDisposition))handler{
     if(_finished||t!=_task){handler(NSURLSessionResponseCancel);return;}NSInteger code=[r isKindOfClass:NSHTTPURLResponse.class]?[(NSHTTPURLResponse *)r statusCode]:0;
+    if(!_searching&&code>=400){TIOModelErrorCode=code;TIOModelErrorBody=[NSMutableData data];handler(NSURLSessionResponseAllow);return;}
     if(code!=200||(!_searching&&![r.MIMEType.lowercaseString isEqual:@"text/event-stream"])){
         handler(NSURLSessionResponseCancel);[self finish:[NSString stringWithFormat:@"%@服务返回HTTP %ld或格式不符，未得到有效结果。",_searching?@"搜索":@"模型",(long)code]];return;}handler(NSURLSessionResponseAllow);
 }
 - (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)data{
-    if(_finished||t!=_task)return;if(_searching){if(_searchData.length+data.length>1024*1024){[self finish:@"搜索响应超过大小限制。"];return;}[_searchData appendData:data];return;}
-    if(![_parser append:data]){[self finish:@"模型流式内容不完整或工具参数不受支持。"];return;}
+    if(_finished||t!=_task)return;if(TIOModelErrorBody){if(TIOModelErrorBody.length<4096)[TIOModelErrorBody appendData:data];return;}if(_searching){if(_searchData.length+data.length>1024*1024){[self finish:@"搜索响应超过大小限制。"];return;}[_searchData appendData:data];return;}
+    if(![_parser append:data]){NSString *why=[_parser isKindOfClass:TIOResponsesStream.class]?((TIOResponsesStream *)_parser).failureMessage:nil;[self finish:why.length?[@"模型返回错误：" stringByAppendingString:why]:@"模型流式内容不完整或工具参数不受支持。"];return;}
     if(_parser.done){[_task cancel];_task=nil;[self modelFinished];}else [self publish:[_prefix stringByAppendingString:_parser.answer]];
 }
 - (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)error{
-    if(_finished||t!=_task)return;if(error){[self finish:_searching?@"搜索连接失败或超时，未获得搜索结果。":@"模型连接失败或超时。"];return;}
+    if(_finished||t!=_task)return;if(TIOModelErrorBody){NSData *b=TIOModelErrorBody;TIOModelErrorBody=nil;id j=[NSJSONSerialization JSONObjectWithData:b options:0 error:nil];NSString *m=[j isKindOfClass:NSDictionary.class]&&[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;if(![m isKindOfClass:NSString.class])m=[[NSString alloc]initWithData:b encoding:NSUTF8StringEncoding]?:@"（无正文）";if(m.length>600)m=[m substringToIndex:600];[self finish:[NSString stringWithFormat:@"模型服务返回HTTP %ld：%@",(long)TIOModelErrorCode,m]];return;}if(error){[self finish:_searching?@"搜索连接失败或超时，未获得搜索结果。":@"模型连接失败或超时。"];return;}
     if(!_searching){[self finish:@"模型连接提前结束，未收到完整结束标记。"];return;}
     NSDictionary *result=_newsMode?SearchResults(_searchData,10,2000):TIOWebSearchResults(_searchData);if(!result){[self finish:@"搜索返回格式无效。"];return;}
     NSString *content=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:result options:0 error:nil] encoding:NSUTF8StringEncoding];

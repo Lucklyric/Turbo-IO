@@ -3,11 +3,12 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 #import "RecordingText.h"
+#import "OpenAIResponses.h"
 #import "ResearchUI.h"
 
 static NSString *const TextDomain=@"io.turboio.official-private-addon";
 static NSUserDefaults *TextPrefs(void){return [[NSUserDefaults alloc]initWithSuiteName:TextDomain];}
-static NSURL *TextEndpoint(NSString *s){NSURLComponents *c=[NSURLComponents componentsWithString:s];return [c.scheme.lowercaseString isEqual:@"https"]&&c.host.length&&!c.user&&!c.password&&!c.query&&!c.fragment&&[c.path hasSuffix:@"/chat/completions"]?c.URL:nil;}
+static NSURL *TextEndpoint(NSString *s){NSURLComponents *c=[NSURLComponents componentsWithString:s];return [c.scheme.lowercaseString isEqual:@"https"]&&c.host.length&&!c.user&&!c.password&&!c.query&&!c.fragment&&([c.path hasSuffix:@"/chat/completions"]||[c.path hasSuffix:@"/responses"])?c.URL:nil;}
 static NSString *TextKey(NSString *endpoint){
     NSDictionary *q=@{(__bridge id)kSecClass:(__bridge id)kSecClassGenericPassword,(__bridge id)kSecAttrService:TextDomain,(__bridge id)kSecAttrAccount:endpoint,(__bridge id)kSecReturnData:@YES};
     CFTypeRef result=NULL;if(SecItemCopyMatching((__bridge CFDictionaryRef)q,&result)!=errSecSuccess)return @"";
@@ -44,13 +45,14 @@ static void ShareText(UIViewController *vc,NSURL *file){if(!file){TextAlert(vc,@
 }
 - (void)next{if(self.ended)return;if(self.answers.count==self.chunks.count){[self finish:nil];return;}self.received=[NSMutableData new];
     NSDictionary *body=TIORecordingSummaryPayload(self.model,self.chunks[self.answers.count],self.disableThinking);if(!body){[self finish:@"文字分段或模型配置无效，未继续发送。"];return;}
-    NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:TextEndpoint(self.endpoint)];r.HTTPMethod=@"POST";r.timeoutInterval=120;[r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];[r setValue:@"application/json" forHTTPHeaderField:@"Accept"];[r setValue:[@"Bearer " stringByAppendingString:self.key] forHTTPHeaderField:@"Authorization"];r.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:nil];if(self.progress)self.progress(self.answers.count+1,self.chunks.count);[[self.session dataTaskWithRequest:r] resume];
+    NSURL *wire=TextEndpoint(self.endpoint);if(TIOIsOpenAI(wire)){body=TIOResponsesBody(body,NO);wire=TIOResponsesURL(wire);}
+    NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:wire];r.HTTPMethod=@"POST";r.timeoutInterval=120;[r setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];[r setValue:@"application/json" forHTTPHeaderField:@"Accept"];[r setValue:[@"Bearer " stringByAppendingString:self.key] forHTTPHeaderField:@"Authorization"];r.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:nil];if(self.progress)self.progress(self.answers.count+1,self.chunks.count);[[self.session dataTaskWithRequest:r] resume];
 }
 - (void)start{if(!self.chunks.count||!TextEndpoint(self.endpoint)||!self.key.length){[self finish:@"请先在研究菜单配置自有模型地址、模型和 Key。"];return;}self.answers=[NSMutableArray new];NSURLSessionConfiguration *c=NSURLSessionConfiguration.ephemeralSessionConfiguration;c.HTTPCookieStorage=nil;c.URLCredentialStorage=nil;c.URLCache=nil;c.timeoutIntervalForResource=180;self.session=[NSURLSession sessionWithConfiguration:c delegate:self delegateQueue:NSOperationQueue.mainQueue];[self next];}
 - (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t willPerformHTTPRedirection:(NSHTTPURLResponse *)r newRequest:(NSURLRequest *)req completionHandler:(void (^)(NSURLRequest *))cb{cb(nil);[self finish:@"服务返回重定向，未携带 Key 跟随。"];}
 - (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveResponse:(NSURLResponse *)r completionHandler:(void (^)(NSURLSessionResponseDisposition))cb{NSInteger code=[r isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)r).statusCode:0;if(code!=200||r.expectedContentLength>2*1024*1024||![r.MIMEType.lowercaseString isEqual:@"application/json"]){cb(NSURLSessionResponseCancel);[self finish:[NSString stringWithFormat:@"服务未返回有效 JSON（HTTP %ld）。未保存错误正文；原转写未改。",(long)code]];}else cb(NSURLSessionResponseAllow);}
 - (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)d{if(self.ended)return;if(self.received.length+d.length>2*1024*1024){[self finish:@"模型响应超过大小限制。"];return;}[self.received appendData:d];}
-- (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)error{if(self.ended)return;if(error){[self finish:@"连接失败或超时，本次整理未完成。原转写保留，可手动重试。"];return;}NSString *answer=TIORecordingSummaryAnswer([NSJSONSerialization JSONObjectWithData:self.received options:0 error:nil]);if(!answer){[self finish:@"模型没有完整结束、返回空内容或非文字结果；未把半截摘要保存为成功。"];return;}[self.answers addObject:answer];[self next];}
+- (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)error{if(self.ended)return;if(error){[self finish:@"连接失败或超时，本次整理未完成。原转写保留，可手动重试。"];return;}id reply=[NSJSONSerialization JSONObjectWithData:self.received options:0 error:nil];NSString *answer=TIORecordingSummaryAnswer(reply)?:TIOResponsesText(reply);if(!answer){[self finish:@"模型没有完整结束、返回空内容或非文字结果；未把半截摘要保存为成功。"];return;}[self.answers addObject:answer];[self next];}
 - (void)cancel{self.ended=YES;self.complete=nil;self.progress=nil;self.key=@"";[self.session invalidateAndCancel];self.session=nil;}
 @end
 

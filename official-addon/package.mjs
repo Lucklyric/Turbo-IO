@@ -29,7 +29,7 @@ export function entitlementsFor(p,o) {
   if(!Array.isArray(p.certs)||!p.certs.includes(o.identity.toUpperCase())||!Array.isArray(p.devices)||!p.devices.includes(o.device)||!(Date.parse(p.expires)>Date.now()))throw Error('profile_identity_device_or_expiry_mismatch');
   const e=structuredClone(p.entitlements), appID=e?.['application-identifier'];
   if(typeof appID!=='string'||(!appID.endsWith('.*')&&!appID.endsWith('.'+o.bundle)))throw Error('profile_bundle_mismatch');
-  e['application-identifier']=appID.endsWith('.*')?appID.slice(0,-1)+o.bundle:appID;
+  if(appID.endsWith('.*')){const team=appID.split('.')[0],prefix=appID.slice(team.length+1,-1);if(!o.bundle.startsWith(prefix))throw Error('profile_bundle_mismatch');e['application-identifier']=team+'.'+o.bundle;}
   if(e['keychain-access-groups'])e['keychain-access-groups']=e['keychain-access-groups'].map(x=>x.endsWith('.*')?x.slice(0,-1)+o.bundle:x);
   return e; // Never synthesize official push, app groups or sign-in permissions.
 }

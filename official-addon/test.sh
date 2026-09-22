@@ -11,7 +11,7 @@ xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation NavigationM
 ./build/navigation-modes-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation Profile.m ProfileTests.m -o build/profile-tests
 ./build/profile-tests
-xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m KnowledgeToolFlowTests.m -o build/knowledge-tool-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m OpenAIResponses.m KnowledgeToolFlowTests.m -o build/knowledge-tool-tests
 ./build/knowledge-tool-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation HomeTabLayout.m HomeTabLayoutTests.m -o build/home-tab-layout-tests
 ./build/home-tab-layout-tests
@@ -33,13 +33,13 @@ xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-incompatible-pointer-types -
 ./build/alwayson-audio-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-incompatible-pointer-types -framework Foundation AlwaysOnOgg.m AlwaysOnOggTests.m -o build/alwayson-ogg-tests
 ./build/alwayson-ogg-tests
-xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation WebSearch.m WebSearchTests.m -o build/web-search-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation WebSearch.m OpenAIResponses.m WebSearchTests.m -o build/web-search-tests
 ./build/web-search-tests
-xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m WebSearchFlowTests.m -o build/web-search-flow-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m OpenAIResponses.m WebSearchFlowTests.m -o build/web-search-flow-tests
 ./build/web-search-flow-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation TodoBridgeClient.m TodoBridgeClientTests.m -o build/todo-bridge-client-tests
 ./build/todo-bridge-client-tests
-xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m TodoToolFlowTests.m -o build/todo-tool-flow-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m WebSearch.m OpenAIResponses.m TodoToolFlowTests.m -o build/todo-tool-flow-tests
 ./build/todo-tool-flow-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -framework Foundation NewsCore.m NewsCoreTests.m -o build/news-core-tests
 ./build/news-core-tests
@@ -64,3 +64,5 @@ xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incomp
 ./build/navigation-tele-tests
 xcrun clang -fobjc-arc -fmodules -Wno-incompatible-pointer-types -framework Foundation A2UIProtocol.m A2UIProtocolTests.m -o build/a2ui-protocol-tests
 ./build/a2ui-protocol-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation WebSearch.m OpenAIResponses.m OpenAIResponsesTests.m -o build/openai-responses-tests
+./build/openai-responses-tests

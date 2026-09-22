@@ -277,6 +277,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"mode"]){c.detailTextLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle3];c.detailTextLabel.textColor=UIColor.labelColor;}
     if([r[@"key"] isEqual:@"history"])c.detailTextLabel.text=[c.detailTextLabel.text stringByAppendingString:@" · 点此管理清空"];
     if(section==-1)c.detailTextLabel.text=@[@"本机音频 / TXT / Markdown · AirDrop与文件",@"导入或粘贴转写，确认后交给自有模型",@"导出 Markdown 或整理已保存文字",@"明确开启保存后，查看与分享音频副本"][row];
+    if([r[@"key"] isEqual:@"effort"])c.detailTextLabel.text=[NSString stringWithFormat:@"%@ · 仅对 api.openai.com 生效",[Prefs stringForKey:@"openaiReasoningEffort"]?:@"medium（默认）"];
     if([r[@"key"] isEqual:@"navigation"])c.detailTextLabel.text=@"高德搜索 / 地图选点 / 步行模拟 → 眼镜常亮文字；需自备iOS Key";
     if([r[@"key"] isEqual:@"archive"])c.detailTextLabel.text=@"一次导出 Markdown 与 JSON";
     if([r[@"key"] isEqual:@"capture"])c.detailTextLabel.text=@"只保存之后的智记文字，不启动麦克风";
@@ -326,7 +327,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     [a addAction:[UIAlertAction actionWithTitle:@"启用本机保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){Controller.captureEpoch=NSUUID.UUID.UUIDString;[Prefs setBool:YES forKey:@"captureFinalText"];[self.tableView reloadData];}]];[self presentViewController:a animated:YES completion:nil];
 }
 - (void)configure {
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"自有模型接口" message:@"填写完整 HTTPS /chat/completions 地址。Key 仅存手机钥匙串；留空保留同一地址的旧 Key，改地址不会带过去。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"自有模型接口" message:@"填写完整 HTTPS /chat/completions 或 /responses 地址（OpenAI 一律走 Responses API）。Key 仅存手机钥匙串；留空保留同一地址的旧 Key，改地址不会带过去。" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"https://…/v1/chat/completions";f.text=[Prefs stringForKey:@"endpoint"];f.keyboardType=UIKeyboardTypeURL;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.autocorrectionType=UITextAutocorrectionTypeNo;}];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"模型名称";f.text=[Prefs stringForKey:@"model"];f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.autocorrectionType=UITextAutocorrectionTypeNo;}];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"新 API Key（不回显）";f.secureTextEntry=YES;f.autocapitalizationType=UITextAutocapitalizationTypeNone;f.autocorrectionType=UITextAutocorrectionTypeNo;}];
@@ -338,6 +339,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"agent"])return;
     if([r[@"key"] isEqual:@"knowledge"]){TIOOpenKnowledge(self);return;}
     if([r[@"key"] isEqual:@"navigation"]){[self.navigationController pushViewController:TIONavigationController() animated:YES];return;}
+    if([r[@"key"] isEqual:@"effort"]){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"推理强度" message:@"仅对 api.openai.com 生效。off＝不发送该参数，非推理模型（如 gpt-4.1）必须选 off。越高越慢。" preferredStyle:UIAlertControllerStyleActionSheet];for(NSString *v in @[@"off",@"low",@"medium",@"high",@"xhigh"]){[a addAction:[UIAlertAction actionWithTitle:v style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[Prefs setObject:v forKey:@"openaiReasoningEffort"];[tableView reloadData];}]];}[a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];a.popoverPresentationController.sourceView=[tableView cellForRowAtIndexPath:ip];[self presentViewController:a animated:YES completion:nil];return;}
 #if TIO_OTA_RESEARCH_ENABLED
     #if TIO_NATIVE_NAV
     if([r[@"key"] isEqual:@"displayPhone"]){[self.navigationController pushViewController:TDPPhoneController() animated:YES];return;}

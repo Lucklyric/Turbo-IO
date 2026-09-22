@@ -43,7 +43,7 @@ BOOL TIOIsEligibleChat(NSString *domain, NSString *intent, NSString *sub, BOOL o
 NSURL *TIOValidateEndpoint(NSString *input) {
     NSURLComponents *c = [NSURLComponents componentsWithString:[input stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]];
     if (!c || ![c.scheme.lowercaseString isEqual:@"https"] || !c.host.length || c.user || c.password || c.fragment || c.query) return nil;
-    if (![c.path hasSuffix:@"/chat/completions"]) return nil;
+    if (![c.path hasSuffix:@"/chat/completions"] && ![c.path hasSuffix:@"/responses"]) return nil;
     return c.URL;
 }
 
