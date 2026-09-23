@@ -19,6 +19,7 @@ NSArray<NSDictionary *> *TIOResearchSections(NSString *page){
         @{@"title":@"High-Risk Firmware Tests · Not for Daily Use",@"rows":@[Row(@"experimentalOTA",@"R3 Test Build · Read the Risks First",@"exclamationmark.shield",-4,0)]},
 #endif
 #endif
+        @{@"title":@"Experiments",@"rows":@[Row(@"localListen",@"Local Listen · Experimental",@"ear",-7,0)]},
         @{@"title":@"Runtime Status",@"rows":@[Row(@"status",@"Compatibility & Callbacks",@"checkmark.shield",2,0)]},
         @{@"title":@"Manual Tests",@"rows":@[Row(@"apiTest",@"Test Model Endpoint",@"bubble.left.and.bubble.right",0,2),Row(@"todoTest",@"To-dos Protocol Check",@"checklist",0,10)]}];
     return @[];

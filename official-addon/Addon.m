@@ -18,6 +18,7 @@
 #import "PrivateBootstrap.h"
 #import "ResearchCatalog.h"
 #import "ResearchUI.h"
+#import "LocalListen.h"
 #if TIO_NATIVE_NAV
 #import "DisplayPhoneUI.h"
 #endif
@@ -279,6 +280,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"effort"])c.detailTextLabel.text=[NSString stringWithFormat:@"%@ · Applies to api.openai.com only",[Prefs stringForKey:@"openaiReasoningEffort"]?:@"medium (default)"];
     if([r[@"key"] isEqual:@"navigation"])c.detailTextLabel.text=@"AMap search / map pin / walk simulation → always-on Glasses text. Requires your own iOS key";
     if([r[@"key"] isEqual:@"archive"])c.detailTextLabel.text=@"Export Markdown and JSON together";
+    if([r[@"key"] isEqual:@"localListen"])c.detailTextLabel.text=@"Glasses audio on this phone for translation, scripts or Live Cues. Step 0 observes only";
     if([r[@"key"] isEqual:@"capture"])c.detailTextLabel.text=@"Saves only future Lifelog text; does not start the microphone";
     if([r[@"key"] isEqual:@"status"])c.accessoryType=UITableViewCellAccessoryNone;
     return c;
@@ -328,6 +330,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     #endif
     if([r[@"key"] isEqual:@"experimentalOTA"]){[self.navigationController pushViewController:TIOExperimentalOTAController() animated:YES];return;}
 #endif
+    if([r[@"key"] isEqual:@"localListen"]){[self.navigationController pushViewController:TIOLocalListenController() animated:YES];return;}
     if([@[@"thinking",@"exit",@"capture"] containsObject:r[@"key"]])return;
     NSInteger section=[r[@"section"] integerValue],row=[r[@"row"] integerValue];
     if(section>=0){[self legacySelect:tableView at:[NSIndexPath indexPathForRow:row inSection:section]];return;}
@@ -431,6 +434,8 @@ __attribute__((constructor)) static void Load(void) {
             VoiceExitReady=valid&&Signature(object_getClass(helper),@"shared",2,"@",@[])&&Signature(helper,@"stopWorkflow",2,"v",@[])&&Signature(voice,@"onAudioRecordStart",2,"v",@[]);
             if(VoiceExitReady)OriginalAudioStart=(void *)method_setImplementation(class_getInstanceMethod(voice,NSSelectorFromString(@"onAudioRecordStart")),(IMP)AudioStartHook);
             if(valid)TIOInstallTodoRuntime();
+            // Observation hooks install only when the user turned them on.
+            if(VersionMatches())TIOLocalListenConfigure(Prefs);
             NSMutableString *loadInfo=[NSMutableString stringWithFormat:@"setup reached; hooks=%d; version=%d; voiceClass=%d; alwaysOnClass=%d\n",valid,VersionMatches(),voice!=Nil,ao!=Nil];
             [loadInfo appendFormat:@"bundle=%@; version=%@; build=%@\n",NSBundle.mainBundle.bundleIdentifier,[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
             for(uint32_t i=0;i<_dyld_image_count();i++){const char *name=_dyld_get_image_name(i);if(name&&[[NSString stringWithUTF8String:name].lastPathComponent isEqual:@"Runner"]){const struct mach_header *h=_dyld_get_image_header(i);[loadInfo appendFormat:@"Runner image index=%u magic=%x\n",i,h->magic];}}
