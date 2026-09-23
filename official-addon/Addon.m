@@ -19,6 +19,7 @@
 #import "ResearchCatalog.h"
 #import "ResearchUI.h"
 #import "LocalListen.h"
+#import "OpenAIResponses.h"
 #if TIO_NATIVE_NAV
 #import "DisplayPhoneUI.h"
 #endif
@@ -436,6 +437,7 @@ __attribute__((constructor)) static void Load(void) {
             if(valid)TIOInstallTodoRuntime();
             // Observation hooks install only when the user turned them on.
             if(VersionMatches())TIOLocalListenConfigure(Prefs);
+            TIOLocalListenSetKeyProvider(^NSString *{NSString *endpoint=[Prefs stringForKey:@"endpoint"]?:@"";NSURL *url=TIOValidateEndpoint(endpoint);return url&&TIOIsOpenAI(url)?ReadKey(endpoint):nil;});
             NSMutableString *loadInfo=[NSMutableString stringWithFormat:@"setup reached; hooks=%d; version=%d; voiceClass=%d; alwaysOnClass=%d\n",valid,VersionMatches(),voice!=Nil,ao!=Nil];
             [loadInfo appendFormat:@"bundle=%@; version=%@; build=%@\n",NSBundle.mainBundle.bundleIdentifier,[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"],[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"]];
             for(uint32_t i=0;i<_dyld_image_count();i++){const char *name=_dyld_get_image_name(i);if(name&&[[NSString stringWithUTF8String:name].lastPathComponent isEqual:@"Runner"]){const struct mach_header *h=_dyld_get_image_header(i);[loadInfo appendFormat:@"Runner image index=%u magic=%x\n",i,h->magic];}}

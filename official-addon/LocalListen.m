@@ -4,6 +4,12 @@
 
 NSString *const TIOLocalListenEnabledKey=@"localListenObserve";
 NSString *const TIOLocalListenModeKey=@"localListenMode";
+NSString *const TIOLocalListenASRKey=@"localListenASR";
+NSString *const TIOLocalListenLanguageKey=@"localListenLanguage";
+NSString *const TIOLocalListenOpenAIModelKey=@"localListenOpenAIModel";
+static NSString *(^KeyProvider)(void);
+void TIOLocalListenSetKeyProvider(NSString *(^provider)(void)){KeyProvider=[provider copy];}
+NSString *TIOLocalListenOpenAIKey(void){return KeyProvider?KeyProvider():nil;}
 
 // Step 0 only observes. Each hook records what it sees, then calls the
 // original implementation with the original arguments.

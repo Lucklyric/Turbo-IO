@@ -64,3 +64,5 @@ xcrun clang -fobjc-arc -fmodules -Wno-incompatible-pointer-types -framework Foun
 ./build/a2ui-protocol-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation WebSearch.m OpenAIResponses.m OpenAIResponsesTests.m -o build/openai-responses-tests
 ./build/openai-responses-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -framework Foundation -framework Speech -framework AVFoundation LocalASR.m LocalASRTests.m -o build/local-asr-tests
+./build/local-asr-tests
