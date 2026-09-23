@@ -39,6 +39,8 @@ FOUNDATION_EXPORT void TIOLocalListenSaveRaw(void);
 FOUNDATION_EXPORT void TIOLocalListenObserveEvent(NSDictionary *event);
 FOUNDATION_EXPORT void TIOLocalListenAutoWorkflowStopped(void);
 FOUNDATION_EXPORT NSDictionary *_Nullable TIOLocalListenOfficialCaption(void);
+// Phone transcript on or off (default on). Off keeps no text on the phone; the glasses are unaffected.
+FOUNDATION_EXPORT NSString *const TIOLocalListenTranscriptKey;
 FOUNDATION_EXPORT void TIOLocalListenAppendText(NSString *text,BOOL final);
 FOUNDATION_EXPORT NSString *TIOLocalListenTranscript(void);
 FOUNDATION_EXPORT void TIOLocalListenClearTranscript(void);
@@ -64,4 +66,5 @@ FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);
 FOUNDATION_EXPORT void TIOLocalGlassesObserveEvent(NSDictionary *event);
 FOUNDATION_EXPORT NSDictionary *TIOLocalGlassesDiagnostics(void);
 FOUNDATION_EXPORT UIViewController *TIOLocalListenController(void);
+FOUNDATION_EXPORT UIViewController *TIOLocalListenDeveloperController(void);
 NS_ASSUME_NONNULL_END

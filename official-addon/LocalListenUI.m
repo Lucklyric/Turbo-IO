@@ -29,17 +29,21 @@
 @property(nonatomic) NSUserDefaults *prefs;
 @property(nonatomic) NSTimer *timer;
 @property(nonatomic) NSArray<NSDictionary *> *taps;
+@property(nonatomic) BOOL developer;
 @end
 @implementation TIOLocalListenPanel
 - (void)viewDidLoad{
-    [super viewDidLoad];self.title=@"Local Listen";TIOStyleResearchTable(self);self.prefs=[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"];
-    self.tableView.tableHeaderView=TIOResearchHeader(@"EXPERIMENTAL",@"Your own captions for the glasses CC: recognition and translation run through your own OpenAI key, and the official service can be sent silence instead of your voice.",UIColor.systemTealColor);
+    [super viewDidLoad];self.title=self.developer?@"Local Listen · Developer":@"Glasses Captions";TIOStyleResearchTable(self);self.prefs=[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"];
+    if(self.developer)self.tableView.tableHeaderView=TIOResearchHeader(@"DEVELOPER",@"Observation tools for glasses audio and protocol messages. Local Captions and its settings are under Model & Chat.",UIColor.systemTealColor);
+    else self.tableView.tableHeaderView=TIOResearchHeader(@"GLASSES CC",@"Your own captions for the glasses CC: recognition and translation run through your own OpenAI key, and the official service can be sent silence instead of your voice.",UIColor.systemTealColor);
 }
 - (void)viewWillAppear:(BOOL)animated{[super viewWillAppear:animated];[self refresh];__weak typeof(self) weak=self;self.timer=[NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t){[weak refresh];}];}
 - (void)viewWillDisappear:(BOOL)animated{[super viewWillDisappear:animated];[self.timer invalidate];self.timer=nil;}
 - (NSString *)engine{return [self.prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind;}
 - (NSString *)language{return [self.prefs stringForKey:TIOLocalListenLanguageKey]?:@"zh-CN";}
 - (NSString *)targetLanguage{return [self.prefs stringForKey:TIOLocalListenTargetLanguageKey]?:@"en";}
+- (BOOL)showTranscript{return [self.prefs objectForKey:TIOLocalListenTranscriptKey]?[self.prefs boolForKey:TIOLocalListenTranscriptKey]:YES;}
+- (void)toggleTranscript:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenTranscriptKey];if(!sw.on)TIOLocalListenClearTranscript();[self refresh];}
 - (void)pickMode:(UISegmentedControl *)s{[self.prefs setInteger:s.selectedSegmentIndex==1?1:0 forKey:TIOLocalListenModeKey];[self refresh];}
 - (void)toggleSilence:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenSilenceCloudKey];[self refresh];}
 - (NSString *)openAIModel{return [self.prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";}
@@ -64,17 +68,19 @@ static void Dim(UITableViewCell *c,BOOL on){
     if([c.accessoryView isKindOfClass:UISwitch.class])((UISwitch *)c.accessoryView).enabled=on;
 }
 static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitch *sw=[UISwitch new];sw.on=on;[sw addTarget:target action:action forControlEvents:UIControlEventValueChanged];c.accessoryView=sw;c.selectionStyle=UITableViewCellSelectionStyleNone;return sw;}
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)t{return kSections;}
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Glasses CC · Local Captions",@"Caption Settings",@"Script",@"Transcript",@"Developer · Observe",@"Audio Taps",@"Official Results"][s];}
+// The feature page shows what you use; the developer page (Diagnostics) shows the observation tools.
+- (NSInteger)kind:(NSInteger)s{return self.developer?s+kObserve:s;}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t{return self.developer?kSections-kObserve:kObserve;}
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Glasses CC · Local Captions",@"Caption Settings",@"Script",@"Transcript",@"Observe",@"Audio Taps",@"Official Results"][[self kind:s]];}
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s{
-    if(s==kCaptions)return @"On: when you start CC on the glasses, your own recognition runs on the glasses audio and its captions replace the official ones on the glasses. Off: CC works as shipped.";
-    if(s==kSettings)return TIOLocalListenAutoEnabled()?@"When the glasses CC is set to translate, OpenAI Translate is used with the glasses' target language. Otherwise the engine below runs. OpenAI engines use the key from Endpoint & API Key.":@"Turn on Local Captions to change these settings.";
-    if(s==kScript)return @"Script mode shows the part of your script still ahead, and moves on as you read it aloud. A line with only --- starts a new page.";
-    if(s==kObserve)return @"Development only. Records audio packets and protocol counters on this phone until you share them.";
+    if([self kind:s]==kCaptions)return @"On: when you start CC on the glasses, your own recognition runs on the glasses audio and its captions replace the official ones on the glasses. Off: CC works as shipped.";
+    if([self kind:s]==kSettings)return TIOLocalListenAutoEnabled()?@"When the glasses CC is set to translate, OpenAI Translate is used with the glasses' target language. Otherwise the engine below runs. OpenAI engines use the key from Endpoint & API Key.":@"Turn on Local Captions to change these settings.";
+    if([self kind:s]==kScript)return @"Script mode shows the part of your script still ahead, and moves on as you read it aloud. A line with only --- starts a new page.";
+    if([self kind:s]==kObserve)return @"Development only. Records audio packets and protocol counters on this phone until you share them.";
     return nil;
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s{
-    if(s==kCaptions)return 3;if(s==kSettings)return 5;if(s==kScript)return 1;if(s==kTranscript)return 2;if(s==kObserve)return 5;if(s==kTaps)return MAX(1,self.taps.count);return 2;
+    if([self kind:s]==kCaptions)return 3;if([self kind:s]==kSettings)return 5;if([self kind:s]==kScript)return 1;if([self kind:s]==kTranscript)return [self showTranscript]?3:1;if([self kind:s]==kObserve)return 5;if([self kind:s]==kTaps)return MAX(1,self.taps.count);return 2;
 }
 - (NSString *)engineTitle{
     NSString *engine=[self engine],*glasses=TIOLocalScriptMode(self.prefs)?nil:TIOLocalGlassesTargetLanguage();
@@ -89,7 +95,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
     UITableViewCell *c=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];TIOStyleResearchCell(c);
     c.textLabel.numberOfLines=0;c.detailTextLabel.numberOfLines=0;
     BOOL captions=TIOLocalListenAutoEnabled(),observe=[self.prefs boolForKey:TIOLocalListenEnabledKey];
-    if(ip.section==kCaptions){
+    if([self kind:ip.section]==kCaptions){
         if(ip.row==0){c.textLabel.text=@"Local Captions";double peak=TIOLocalListenAutoPeak();
             c.detailTextLabel.text=captions?[NSString stringWithFormat:@"On · %@\nInput level: %@",TIOLocalListenAutoStatus(),peak>1?[NSString stringWithFormat:@"%.0f dBFS",20*log10(peak/32768)]:@"silent"]:@"Off";
             Switch(c,captions,self,@selector(toggleAuto:));}
@@ -97,7 +103,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
             UISegmentedControl *mode=[[UISegmentedControl alloc]initWithItems:@[@"Translation",@"Script"]];mode.selectedSegmentIndex=TIOLocalScriptMode(self.prefs)?1:0;[mode addTarget:self action:@selector(pickMode:) forControlEvents:UIControlEventValueChanged];
             c.accessoryView=mode;c.selectionStyle=UITableViewCellSelectionStyleNone;Dim(c,captions);mode.enabled=captions;}
         if(ip.row==2){c.textLabel.text=@"On the Glasses";c.detailTextLabel.text=TIOLocalGlassesStatus();c.selectionStyle=UITableViewCellSelectionStyleNone;Dim(c,captions);}
-    }else if(ip.section==kSettings){
+    }else if([self kind:ip.section]==kSettings){
         BOOL translate=!TIOLocalScriptMode(self.prefs)&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
         if(ip.row==0){c.textLabel.text=@"Engine";c.detailTextLabel.text=[self engineTitle];}
         if(ip.row==1){if(translate){c.textLabel.text=@"Translate To";NSString *g=TIOLocalGlassesTargetLanguage();c.detailTextLabel.text=g?[g stringByAppendingString:@" · set on the glasses"]:[[self targetLanguage] isEqual:@"zh"]?@"Chinese":@"English";}
@@ -106,15 +112,16 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
         if(ip.row==3){BOOL on=TIOLocalListenSilenceCloud();c.textLabel.text=@"Silence Cloud Audio";c.detailTextLabel.text=on?@"The official service receives silence. Only OpenAI hears you.":@"The official service receives your real audio.";Switch(c,on,self,@selector(toggleSilence:));}
         if(ip.row==4){NSString *chosen=[self.prefs stringForKey:TIOLocalListenTriggerKey];c.textLabel.text=@"Audio Source";c.detailTextLabel.text=chosen.length?chosen:@"Automatic · glasses CC audio";}
         Dim(c,captions);
-    }else if(ip.section==kScript){
+    }else if([self kind:ip.section]==kScript){
         NSString *script=[self.prefs stringForKey:TIOLocalListenScriptKey]?:@"";NSUInteger pages=TIOPagePaginate(script,40).count;
         c.textLabel.text=@"Edit Script";c.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
         c.detailTextLabel.text=script.length?[NSString stringWithFormat:@"%lu pages · %@\n%@",(unsigned long)pages,TIOLocalScriptStatus(),[script substringToIndex:MIN(script.length,(NSUInteger)80)]]:@"Empty. Paste or type your script.";
         Dim(c,captions&&TIOLocalScriptMode(self.prefs));
-    }else if(ip.section==kTranscript){
-        if(ip.row==0){NSString *text=TIOLocalListenTranscript();c.textLabel.text=text.length?text:@"Nothing yet";c.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];c.selectionStyle=UITableViewCellSelectionStyleNone;}
-        if(ip.row==1){c.textLabel.text=@"Clear Transcript";}
-    }else if(ip.section==kObserve){
+    }else if([self kind:ip.section]==kTranscript){
+        if(ip.row==0){BOOL on=[self showTranscript];c.textLabel.text=@"Show Transcript on Phone";c.detailTextLabel.text=on?@"On · the glasses are not affected":@"Off · no text is kept on the phone";Switch(c,on,self,@selector(toggleTranscript:));}
+        if(ip.row==1){NSString *text=TIOLocalListenTranscript();c.textLabel.text=text.length?text:@"Nothing yet";c.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];c.selectionStyle=UITableViewCellSelectionStyleNone;}
+        if(ip.row==2){c.textLabel.text=@"Clear Transcript";}
+    }else if([self kind:ip.section]==kObserve){
         NSTimeInterval left=TIOLocalListenRecordingRemaining();
         if(ip.row==0){c.textLabel.text=@"Observe Audio & Hints";c.detailTextLabel.text=observe?@"On":@"Off";Switch(c,observe,self,@selector(toggle:));return c;}
         if(ip.row==1){c.textLabel.text=left>0?[NSString stringWithFormat:@"Recording… %.0f s left",left]:@"Record 30 s Raw Sample";c.detailTextLabel.text=@"Saves every observed audio packet with timing";}
@@ -122,7 +129,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
         if(ip.row==3){c.textLabel.text=@"View Class Inventory";c.detailTextLabel.text=@"Audio, caption and Live Cues classes found at runtime";}
         if(ip.row==4){c.textLabel.text=@"Reset Counters";}
         Dim(c,observe);
-    }else if(ip.section==kTaps){
+    }else if([self kind:ip.section]==kTaps){
         c.selectionStyle=UITableViewCellSelectionStyleNone;
         if(!self.taps.count){c.textLabel.text=@"No calls yet";c.detailTextLabel.text=TIOLocalListenInstalled()?@"Start CC on the glasses.":@"Turn on Local Captions or Observe first.";return c;}
         NSDictionary *tap=self.taps[ip.row];double span=[tap[@"last"] doubleValue]-[tap[@"first"] doubleValue];NSUInteger n=[tap[@"count"] unsignedIntegerValue];
@@ -161,7 +168,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip{
     [t deselectRowAtIndexPath:ip animated:YES];
-    if(ip.section==kSettings){
+    if([self kind:ip.section]==kSettings){
         if(ip.row==0&&(TIOLocalScriptMode(self.prefs)||!TIOLocalGlassesTargetLanguage()))[self pickFrom:@[@"Apple · On-Device",@"OpenAI Live · Streaming",@"OpenAI · Per Sentence",@"OpenAI Translate · Streaming"] values:@[TIOLocalASRAppleKind,TIOLocalASROpenAILiveKind,TIOLocalASROpenAIKind,TIOLocalASROpenAITranslateKind] key:TIOLocalListenASRKey title:@"Recognition Engine"];
         BOOL translate=!TIOLocalScriptMode(self.prefs)&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
         if(ip.row==1&&translate&&!TIOLocalGlassesTargetLanguage())[self pickFrom:@[@"English",@"Chinese"] values:@[@"en",@"zh"] key:TIOLocalListenTargetLanguageKey title:@"Translate To"];
@@ -170,9 +177,9 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
         if(ip.row==4)[self pickTrigger];
         return;
     }
-    if(ip.section==kScript){TIOScriptEditor *e=[TIOScriptEditor new];e.prefs=self.prefs;[self.navigationController pushViewController:e animated:YES];return;}
-    if(ip.section==kTranscript){if(ip.row==1){TIOLocalListenClearTranscript();[self refresh];}return;}
-    if(ip.section!=kObserve)return;
+    if([self kind:ip.section]==kScript){TIOScriptEditor *e=[TIOScriptEditor new];e.prefs=self.prefs;[self.navigationController pushViewController:e animated:YES];return;}
+    if([self kind:ip.section]==kTranscript){if(ip.row==2){TIOLocalListenClearTranscript();[self refresh];}return;}
+    if([self kind:ip.section]!=kObserve)return;
     if(ip.row==1&&TIOLocalListenRecordingRemaining()<=0&&!TIOLocalListenRecord(30)){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Turn On First" message:@"Turn on observation before recording a sample." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];}
     if(ip.row==2){NSArray *files=TIOLocalListenSampleFiles();if(!files.count)return;UIActivityViewController *share=[[UIActivityViewController alloc]initWithActivityItems:files applicationActivities:nil];share.popoverPresentationController.sourceView=[t cellForRowAtIndexPath:ip];[self presentViewController:share animated:YES completion:nil];}
     if(ip.row==3){TIOTextPage *p=[TIOTextPage new];p.title=@"Class Inventory";p.text=TIOLocalListenInventory();[self.navigationController pushViewController:p animated:YES];}
@@ -182,3 +189,4 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
 @end
 
 UIViewController *TIOLocalListenController(void){return [[TIOLocalListenPanel alloc]initWithStyle:UITableViewStyleInsetGrouped];}
+UIViewController *TIOLocalListenDeveloperController(void){TIOLocalListenPanel *p=[[TIOLocalListenPanel alloc]initWithStyle:UITableViewStyleInsetGrouped];p.developer=YES;return p;}

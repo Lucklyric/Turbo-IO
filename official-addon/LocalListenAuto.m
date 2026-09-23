@@ -53,7 +53,9 @@ static void SaveRecent(void){
     [TIOLocalASRWav(Recent) writeToURL:[dir URLByAppendingPathComponent:@"last-session.wav"] atomically:YES];[Recent setLength:0];
 }
 NSString *TIOLocalListenAutoStatus(void){os_unfair_lock_lock(&TextLock);NSString *s=Status;os_unfair_lock_unlock(&TextLock);return s;}
+NSString *const TIOLocalListenTranscriptKey=@"localListenTranscript";
 void TIOLocalListenAppendText(NSString *text,BOOL final){
+    if([Prefs objectForKey:TIOLocalListenTranscriptKey]&&![Prefs boolForKey:TIOLocalListenTranscriptKey])return;
     os_unfair_lock_lock(&TextLock);if(!Lines)Lines=[NSMutableArray new];
     if(final){Partial=nil;[Lines addObject:[text copy]];if(Lines.count>50)[Lines removeObjectAtIndex:0];}else Partial=[text copy];
     os_unfair_lock_unlock(&TextLock);

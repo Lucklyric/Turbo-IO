@@ -281,7 +281,8 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"effort"])c.detailTextLabel.text=[NSString stringWithFormat:@"%@ · Applies to api.openai.com only",[Prefs stringForKey:@"openaiReasoningEffort"]?:@"medium (default)"];
     if([r[@"key"] isEqual:@"navigation"])c.detailTextLabel.text=@"AMap search / map pin / walk simulation → always-on Glasses text. Requires your own iOS key";
     if([r[@"key"] isEqual:@"archive"])c.detailTextLabel.text=@"Export Markdown and JSON together";
-    if([r[@"key"] isEqual:@"localListen"])c.detailTextLabel.text=@"Glasses audio on this phone for translation, scripts or Live Cues. Step 0 observes only";
+    if([r[@"key"] isEqual:@"localListen"])c.detailTextLabel.text=@"Observe glasses audio and protocol messages";
+    if([r[@"key"] isEqual:@"captions"])c.detailTextLabel.text=TIOLocalListenAutoEnabled()?[NSString stringWithFormat:@"On · %@",[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==1?@"Script":@"Translation"]:@"Off · your own captions, translation or script on the glasses CC";
     if([r[@"key"] isEqual:@"capture"])c.detailTextLabel.text=@"Saves only future Lifelog text; does not start the microphone";
     if([r[@"key"] isEqual:@"status"])c.accessoryType=UITableViewCellAccessoryNone;
     return c;
@@ -331,7 +332,8 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     #endif
     if([r[@"key"] isEqual:@"experimentalOTA"]){[self.navigationController pushViewController:TIOExperimentalOTAController() animated:YES];return;}
 #endif
-    if([r[@"key"] isEqual:@"localListen"]){[self.navigationController pushViewController:TIOLocalListenController() animated:YES];return;}
+    if([r[@"key"] isEqual:@"localListen"]){[self.navigationController pushViewController:TIOLocalListenDeveloperController() animated:YES];return;}
+    if([r[@"key"] isEqual:@"captions"]){[self.navigationController pushViewController:TIOLocalListenController() animated:YES];return;}
     if([@[@"thinking",@"exit",@"capture"] containsObject:r[@"key"]])return;
     NSInteger section=[r[@"section"] integerValue],row=[r[@"row"] integerValue];
     if(section>=0){[self legacySelect:tableView at:[NSIndexPath indexPathForRow:row inSection:section]];return;}
