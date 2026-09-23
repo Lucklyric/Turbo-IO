@@ -18,5 +18,10 @@ int main(void){@autoreleasepool{
     // Odd-sized chunks still frame correctly, and a sentence never exceeds 15 s.
     NSData *longSpeech=Tone(20,3000);for(NSUInteger i=0;i<longSpeech.length;i+=333)[seg append:[longSpeech subdataWithRange:NSMakeRange(i,MIN(333,longSpeech.length-i))]];
     [seg flush];assert(out.count==3);assert(out[1].length<=15*32000+640);
-    NSLog(@"PASS: local ASR WAV header and speech segmenter");
+    // 16 kHz to 24 kHz: 3 output samples per 2 input, continuous across uneven chunks.
+    TIOResampler24k *rs=[TIOResampler24k new];NSData *src=Tone(1.0,3000);NSMutableData *dst=[NSMutableData new];
+    for(NSUInteger i=0;i<src.length;i+=202)[dst appendData:[rs process:[src subdataWithRange:NSMakeRange(i,MIN(202,src.length-i))]]];
+    NSUInteger samples=dst.length/2;assert(samples>=23990&&samples<=24010);
+    const int16_t *o=dst.bytes;for(NSUInteger i=1;i<samples;i++)assert(abs(o[i]-o[i-1])<400);
+    NSLog(@"PASS: local ASR WAV header, speech segmenter and 24 kHz resampler");
 }return 0;}

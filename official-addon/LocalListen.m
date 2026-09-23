@@ -83,6 +83,7 @@ static void Observe(NSString *key,id arg){
     }
     os_unfair_lock_unlock(&Lock);
     if(d&&Dump)WriteFrame(index,d,now);
+    if(d)TIOLocalListenAutoPacket(key,d);
 }
 static void ObserveHint(NSString *key,id arg){
     Observe(key,arg);if(!Active||!arg)return;
@@ -112,8 +113,9 @@ static void Hook(Class cls,Method m,NSString *key,BOOL hint){
 }
 void TIOLocalListenConfigure(NSUserDefaults *prefs){
     Prefs=prefs;Taps=[NSMutableDictionary new];TapOrder=[NSMutableArray new];DumpQueue=dispatch_queue_create("io.turboio.locallisten.dump",DISPATCH_QUEUE_SERIAL);
-    Active=[Prefs boolForKey:TIOLocalListenEnabledKey];
-    if(Active&&!TIOLocalListenInstall()){Active=NO;[Prefs setBool:NO forKey:TIOLocalListenEnabledKey];}
+    TIOLocalListenAutoConfigure(prefs);
+    Active=[Prefs boolForKey:TIOLocalListenEnabledKey]||[Prefs boolForKey:TIOLocalListenAutoKey];
+    if(Active&&!TIOLocalListenInstall()){Active=NO;[Prefs setBool:NO forKey:TIOLocalListenEnabledKey];[Prefs setBool:NO forKey:TIOLocalListenAutoKey];}
 }
 BOOL TIOLocalListenInstalled(void){return Installed;}
 BOOL TIOLocalListenInstall(void){

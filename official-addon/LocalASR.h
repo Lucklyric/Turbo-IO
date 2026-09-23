@@ -4,6 +4,11 @@ NS_ASSUME_NONNULL_BEGIN
 // mono PCM16, so the audio source (phone mic now, glasses later) is swappable.
 FOUNDATION_EXPORT NSString *const TIOLocalASRAppleKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAIKind;
+FOUNDATION_EXPORT NSString *const TIOLocalASROpenAILiveKind;
+// Linear 16 kHz to 24 kHz resampler that keeps state across chunks. Exposed for tests.
+@interface TIOResampler24k : NSObject
+- (NSData *)process:(NSData *)pcm16k;
+@end
 FOUNDATION_EXPORT NSData *TIOLocalASRWav(NSData *pcm16k);
 // Energy-based speech segmenter used by the OpenAI backend. Exposed for tests.
 @interface TIOSpeechSegmenter : NSObject

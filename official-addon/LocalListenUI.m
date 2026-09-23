@@ -24,8 +24,6 @@ static NSArray<NSString *> *ModeDetails(void){return @[
 @property(nonatomic) TIOLocalASR *asr;
 @property(nonatomic) TIOPhoneMic *mic;
 @property(nonatomic,copy) NSString *asrStatus;
-@property(nonatomic) NSMutableArray<NSString *> *lines;
-@property(nonatomic,copy) NSString *partial;
 @end
 @implementation TIOLocalListenPanel
 - (void)viewDidLoad{
@@ -44,9 +42,9 @@ static NSArray<NSString *> *ModeDetails(void){return @[
     asr.keyProvider=^NSString *{return TIOLocalListenOpenAIKey();};__weak typeof(self) weak=self;
     asr.onStatus=^(NSString *status){weak.asrStatus=status;[weak refresh];};
     asr.onText=^(NSString *text,BOOL final){typeof(self) s=weak;if(!s)return;
-        if(final){s.partial=nil;[s.lines addObject:text];if(s.lines.count>30)[s.lines removeObjectAtIndex:0];}else s.partial=text;[s refresh];};
+        TIOLocalListenAppendText(text,final);[s refresh];};
     TIOPhoneMic *mic=[TIOPhoneMic new];mic.onPCM=^(NSData *pcm){[asr appendPCM16:pcm];};
-    self.asr=asr;self.mic=mic;self.lines=self.lines?:[NSMutableArray new];self.asrStatus=@"Starting…";
+    self.asr=asr;self.mic=mic;self.asrStatus=@"Starting…";
     [mic startWithCompletion:^(NSString *error){if(error){weak.asrStatus=error;[weak.asr stop];weak.mic=nil;weak.asr=nil;[weak refresh];return;}[asr start];}];
     [self refresh];
 }
@@ -64,16 +62,17 @@ static NSArray<NSString *> *ModeDetails(void){return @[
     [self presentViewController:a animated:YES completion:nil];
 }
 - (void)refresh{self.taps=TIOLocalListenTaps();[self.tableView reloadData];}
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)t{return 6;}
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Mode",@"Recognition",@"Transcript",@"Step 0 · Observe",@"Audio Taps",@"Official Live Cues"][s];}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t{return 7;}
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Mode",@"Follow Live Captions",@"Recognition",@"Transcript",@"Step 0 · Observe",@"Audio Taps",@"Official Live Cues"][s];}
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s{
     if(s==0)return @"The mode is saved for the next steps. Nothing is processed locally yet.";
-    if(s==1)return @"Apple runs on this phone and streams words as you speak. OpenAI sends each sentence to api.openai.com after a short pause, using the key from Endpoint & API Key. The test uses the phone microphone until glasses audio is decoded.";
-    if(s==3)return @"Turn on, then start Live Captions or Live Cues on the glasses and talk for a while. Samples stay on this phone until you share them.";
+    if(s==1)return @"When the official Live Captions feed receives glasses audio, recognition starts on the same audio and stops 2.5 s after the feed goes quiet. Official captions keep running. Text appears under Transcript.";
+    if(s==2)return @"Apple runs on this phone and streams words as you speak. OpenAI Live streams audio to api.openai.com and returns words as you speak. OpenAI Per Sentence uploads each sentence after a short pause. Both OpenAI engines use the key from Endpoint & API Key. The test uses the phone microphone until glasses audio is decoded.";
+    if(s==4)return @"Turn on, then start Live Captions or Live Cues on the glasses and talk for a while. Samples stay on this phone until you share them.";
     return nil;
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s{
-    if(s==0)return 3;if(s==1)return 4;if(s==2)return 2;if(s==3)return 5;if(s==4)return MAX(1,self.taps.count);return 1;
+    if(s==0)return 3;if(s==1)return 2;if(s==2)return 4;if(s==3)return 2;if(s==4)return 5;if(s==5)return MAX(1,self.taps.count);return 1;
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip{
     UITableViewCell *c=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];TIOStyleResearchCell(c);
@@ -82,22 +81,26 @@ static NSArray<NSString *> *ModeDetails(void){return @[
         c.textLabel.text=ModeTitles()[ip.row];c.detailTextLabel.text=ModeDetails()[ip.row];
         c.accessoryType=[self.prefs integerForKey:TIOLocalListenModeKey]==ip.row?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
     }else if(ip.section==1){
-        BOOL openai=[[self engine] isEqual:TIOLocalASROpenAIKind];
-        if(ip.row==0){c.textLabel.text=@"Engine";c.detailTextLabel.text=openai?@"OpenAI · cloud, one sentence at a time":@"Apple · on-device, streaming";}
-        if(ip.row==1){c.textLabel.text=@"Language";c.detailTextLabel.text=[[self language] hasPrefix:@"zh"]?@"Chinese (Mandarin)":@"English";}
-        if(ip.row==2){c.textLabel.text=@"OpenAI Model";c.detailTextLabel.text=openai?[self openAIModel]:[[self openAIModel] stringByAppendingString:@" · used when the engine is OpenAI"];}
-        if(ip.row==3){c.textLabel.text=self.mic?@"Stop Phone Mic Test":@"Start Phone Mic Test";c.textLabel.textColor=self.mic?UIColor.systemRedColor:self.view.tintColor;c.detailTextLabel.text=[NSString stringWithFormat:@"%@\nInput: %@",self.asrStatus?:@"Idle",[TIOPhoneMic inputRoute]];}
+        if(ip.row==0){BOOL on=TIOLocalListenAutoEnabled();c.textLabel.text=@"Follow Live Captions";c.detailTextLabel.text=TIOLocalListenAutoStatus();UISwitch *sw=[UISwitch new];sw.on=on;[sw addTarget:self action:@selector(toggleAuto:) forControlEvents:UIControlEventValueChanged];c.accessoryView=sw;c.selectionStyle=UITableViewCellSelectionStyleNone;}
+        if(ip.row==1){NSString *chosen=[self.prefs stringForKey:TIOLocalListenTriggerKey];BOOL seen=NO;for(NSDictionary *tap in self.taps)if(TIOLocalListenIsAutoTrigger(tap[@"key"],chosen))seen=YES;
+            c.textLabel.text=@"Trigger";c.detailTextLabel.text=[NSString stringWithFormat:@"%@\n%@",chosen.length?chosen:@"Automatic · the Timekettle audio feed",seen?@"Seen in Audio Taps":@"Not seen yet. If captions run but nothing starts, pick the caption feed from Audio Taps here."];}
     }else if(ip.section==2){
-        if(ip.row==0){c.textLabel.text=self.lines.count||self.partial?[[self.lines componentsJoinedByString:@"\n"] stringByAppendingString:self.partial?[@"\n" stringByAppendingString:self.partial]:@""]:@"Nothing yet";c.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];c.selectionStyle=UITableViewCellSelectionStyleNone;}
-        if(ip.row==1){c.textLabel.text=@"Clear Transcript";}
+        NSString *engine=[self engine];BOOL openai=[engine isEqual:TIOLocalASROpenAIKind];
+        if(ip.row==0){c.textLabel.text=@"Engine";c.detailTextLabel.text=openai?@"OpenAI · cloud, one sentence at a time":[engine isEqual:TIOLocalASROpenAILiveKind]?@"OpenAI Live · cloud, streaming (gpt-live-transcribe)":@"Apple · on-device, streaming";}
+        if(ip.row==1){c.textLabel.text=@"Language";c.detailTextLabel.text=[[self language] hasPrefix:@"zh"]?@"Chinese (Mandarin)":@"English";}
+        if(ip.row==2){c.textLabel.text=@"OpenAI Model";c.detailTextLabel.text=openai?[self openAIModel]:[[self openAIModel] stringByAppendingString:@" · used by OpenAI Per Sentence. Live uses gpt-live-transcribe unless a live model is set"];}
+        if(ip.row==3){c.textLabel.text=self.mic?@"Stop Phone Mic Test":@"Start Phone Mic Test";c.textLabel.textColor=self.mic?UIColor.systemRedColor:self.view.tintColor;c.detailTextLabel.text=[NSString stringWithFormat:@"%@\nInput: %@",self.asrStatus?:@"Idle",[TIOPhoneMic inputRoute]];}
     }else if(ip.section==3){
+        if(ip.row==0){NSString *text=TIOLocalListenTranscript();c.textLabel.text=text.length?text:@"Nothing yet";c.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];c.selectionStyle=UITableViewCellSelectionStyleNone;}
+        if(ip.row==1){c.textLabel.text=@"Clear Transcript";}
+    }else if(ip.section==4){
         BOOL on=[self.prefs boolForKey:TIOLocalListenEnabledKey];NSTimeInterval left=TIOLocalListenRecordingRemaining();
         if(ip.row==0){c.textLabel.text=@"Observe Audio & Hints";c.detailTextLabel.text=on?@"On · Official behavior unchanged":@"Off";UISwitch *s=[UISwitch new];s.on=on;[s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];c.accessoryView=s;c.selectionStyle=UITableViewCellSelectionStyleNone;}
         if(ip.row==1){c.textLabel.text=left>0?[NSString stringWithFormat:@"Recording… %.0f s left",left]:@"Record 30 s Raw Sample";c.detailTextLabel.text=@"Saves every observed audio packet with timing";}
         if(ip.row==2){c.textLabel.text=@"Share Samples";c.detailTextLabel.text=[NSString stringWithFormat:@"%lu files on this phone",(unsigned long)TIOLocalListenSampleFiles().count];}
         if(ip.row==3){c.textLabel.text=@"View Class Inventory";c.detailTextLabel.text=TIOLocalListenInstalled()?@"Audio, caption and Live Cues classes found at runtime":@"Available after turning on";}
         if(ip.row==4){c.textLabel.text=@"Reset Counters";}
-    }else if(ip.section==4){
+    }else if(ip.section==5){
         if(!self.taps.count){c.textLabel.text=@"No calls yet";c.detailTextLabel.text=TIOLocalListenInstalled()?@"Start Live Captions or Live Cues on the glasses.":@"Turn on observation first.";c.selectionStyle=UITableViewCellSelectionStyleNone;return c;}
         NSDictionary *tap=self.taps[ip.row];double span=[tap[@"last"] doubleValue]-[tap[@"first"] doubleValue];NSUInteger n=[tap[@"count"] unsignedIntegerValue];
         c.textLabel.text=tap[@"key"];
@@ -113,22 +116,35 @@ static NSArray<NSString *> *ModeDetails(void){return @[
     }
     return c;
 }
+- (void)toggleAuto:(UISwitch *)sw{
+    if(!TIOLocalListenSetAuto(sw.on)){sw.on=NO;UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Not Available" message:@"The official listener classes were not found in this app version." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];}
+    [self refresh];
+}
+- (void)pickTrigger{
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Trigger" message:@"Which observed audio call means Live Captions is running." preferredStyle:UIAlertControllerStyleActionSheet];
+    [a addAction:[UIAlertAction actionWithTitle:@"Automatic (Timekettle feed)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.prefs removeObjectForKey:TIOLocalListenTriggerKey];[self refresh];}]];
+    for(NSDictionary *tap in self.taps)if(tap[@"lastSize"]){NSString *key=tap[@"key"];[a addAction:[UIAlertAction actionWithTitle:key style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.prefs setObject:key forKey:TIOLocalListenTriggerKey];[self refresh];}]];}
+    [a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];a.popoverPresentationController.sourceView=self.view;a.popoverPresentationController.sourceRect=CGRectMake(self.view.bounds.size.width/2,120,1,1);
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (void)toggle:(UISwitch *)s{
     if(s.on&&!TIOLocalListenInstall()){s.on=NO;UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Not Available" message:@"The official listener classes were not found in this app version." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];return;}
+    if(!s.on&&TIOLocalListenAutoEnabled())TIOLocalListenSetAuto(NO);
     TIOLocalListenSetActive(s.on);[self.prefs setBool:s.on forKey:TIOLocalListenEnabledKey];[self refresh];
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip{
     [t deselectRowAtIndexPath:ip animated:YES];
     if(ip.section==0){[self.prefs setInteger:ip.row forKey:TIOLocalListenModeKey];[self refresh];return;}
-    if(ip.section==1){
-        if(ip.row==0)[self pickFrom:@[@"Apple · On-Device",@"OpenAI · Cloud"] values:@[TIOLocalASRAppleKind,TIOLocalASROpenAIKind] key:TIOLocalListenASRKey title:@"Recognition Engine"];
+    if(ip.section==2){
+        if(ip.row==0)[self pickFrom:@[@"Apple · On-Device",@"OpenAI Live · Streaming",@"OpenAI · Per Sentence"] values:@[TIOLocalASRAppleKind,TIOLocalASROpenAILiveKind,TIOLocalASROpenAIKind] key:TIOLocalListenASRKey title:@"Recognition Engine"];
         if(ip.row==1)[self pickFrom:@[@"Chinese (Mandarin)",@"English"] values:@[@"zh-CN",@"en-US"] key:TIOLocalListenLanguageKey title:@"Language"];
         if(ip.row==2)[self editModel];
         if(ip.row==3)[self toggleMic];
         return;
     }
-    if(ip.section==2){if(ip.row==1){[self.lines removeAllObjects];self.partial=nil;[self refresh];}return;}
-    if(ip.section!=3)return;
+    if(ip.section==3){if(ip.row==1){TIOLocalListenClearTranscript();[self refresh];}return;}
+    if(ip.section==1){if(ip.row==1)[self pickTrigger];return;}
+    if(ip.section!=4)return;
     if(ip.row==1&&TIOLocalListenRecordingRemaining()<=0&&!TIOLocalListenRecord(30)){UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Turn On First" message:@"Turn on observation before recording a sample." preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:a animated:YES completion:nil];}
     if(ip.row==2){NSArray *files=TIOLocalListenSampleFiles();if(!files.count)return;UIActivityViewController *share=[[UIActivityViewController alloc]initWithActivityItems:files applicationActivities:nil];share.popoverPresentationController.sourceView=[t cellForRowAtIndexPath:ip];[self presentViewController:share animated:YES completion:nil];}
     if(ip.row==3){TIOTextPage *p=[TIOTextPage new];p.title=@"Class Inventory";p.text=TIOLocalListenInventory();[self.navigationController pushViewController:p animated:YES];}
