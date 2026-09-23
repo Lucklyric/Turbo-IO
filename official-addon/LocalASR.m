@@ -166,7 +166,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 }
 @end
 
-@implementation TIOOpenAILiveASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;NSMutableString *_partial;BOOL _running;}
+@implementation TIOOpenAILiveASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;NSMutableString *_partial;BOOL _running;TIOSpeechSegmenter *_pauses;}
 - (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-live",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_partial=[NSMutableString new];_resampler=[TIOResampler24k new];}return self;}
 - (NSString *)liveModel{return [self.model containsString:@"live"]||[self.model containsString:@"realtime"]?self.model:@"gpt-live-transcribe";}
 - (void)send:(NSDictionary *)event{
@@ -185,7 +185,10 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         if([self.language hasPrefix:@"zh"])transcription[@"prompt"]=@"以下是普通话，请使用简体中文。";
         [self send:@{@"type":@"session.update",@"session":@{@"type":@"transcription",@"audio":@{@"input":@{
             @"format":@{@"type":@"audio/pcm",@"rate":@24000},@"transcription":transcription,
-            @"turn_detection":@{@"type":@"server_vad",@"silence_duration_ms":@500}}}}}];
+            @"turn_detection":NSNull.null}}}}];
+        // gpt-live-transcribe rejects server turn detection, so commit at local pauses.
+        self->_pauses=[TIOSpeechSegmenter new];__weak typeof(self) weakSelf=self;
+        self->_pauses.onSegment=^(NSData *pcm){[weakSelf commit];};
         [self status:@"Connecting · OpenAI Live"];[self receive];
     });
 }
@@ -208,10 +211,15 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
     else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){[_partial setString:@""];[self emit:[j[@"transcript"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] final:YES];}
     else if([type isEqual:@"error"]){id m=[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;[self status:[@"OpenAI Live error: " stringByAppendingString:[m isKindOfClass:NSString.class]?m:@"no details"]];}
 }
+- (void)commit{
+    // Runs on _q: the segmenter is only driven from appendPCM16 below.
+    if(self->_outgoing.length){[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+    [self send:@{@"type":@"input_audio_buffer.commit"}];
+}
 - (void)appendPCM16:(NSData *)pcm{
     dispatch_async(_q,^{
         if(!self->_running)return;
-        [self->_outgoing appendData:[self->_resampler process:pcm]];
+        [self->_outgoing appendData:[self->_resampler process:pcm]];[self->_pauses append:pcm];
         // Send about 100 ms of 24 kHz audio per event.
         if(self->_outgoing.length>=4800){[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
     });

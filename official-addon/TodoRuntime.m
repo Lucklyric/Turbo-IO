@@ -1,3 +1,4 @@
+#import "LocalListen.h"
 #import "TodoRuntime.h"
 #if TIO_NATIVE_NAV
 #import "DisplayPhoneUI.h"
@@ -89,6 +90,7 @@ static void Send(id self,SEL cmd,NSString *channel,NSData *message,id reply){
                 if(TDPPhoneRouteReply(e,^(BOOL owned){if(owned){if(reply)((void(^)(NSData *))reply)(nil);}else PriorSend(self,cmd,channel,message,reply);}))return;
 #endif
 #endif
+                TIOLocalListenObserveEvent(e);
                 dispatch_async(dispatch_get_main_queue(),^{TIOProtocolObserveEvent(e);TIONewsTeleObserveEvent(e);TIONavObserveEvent(e);TIOSubtitleObserveEvent(e);});
                 if(physical)dispatch_async(dispatch_get_main_queue(),^{PhysicalEvents++;if(TestWire.length&&[physical[@"wireId"] isEqual:TestWire]&&[physical[@"deviceId"] isEqual:TestDevice]){PhysicalComplete=[physical[@"status"] isEqual:@1];State=PhysicalComplete?@"Glasses reported this test item as done; real ID matches":@"Glasses reported this test item as not done";SaveEvidence();}});
             }

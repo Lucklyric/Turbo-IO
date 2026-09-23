@@ -23,12 +23,35 @@ static CFAbsoluteTime LastPacket;
 static void *Opus;
 static NSUInteger Decoded,Failures;
 static BOOL Undecodable;
+// Development aids: the last 15 s of fed audio (saved as WAV when a session ends),
+// the loudest recent level, and a short log of engine status messages.
+static NSMutableData *Recent;
+static double Peak;
+static NSMutableArray<NSString *> *Log;
 // Transcript and status are read by the page on the main thread.
 static os_unfair_lock TextLock=OS_UNFAIR_LOCK_INIT;
 static NSMutableArray<NSString *> *Lines;
 static NSString *Partial,*Status=@"Off";
 
-static void SetStatus(NSString *s){os_unfair_lock_lock(&TextLock);Status=[s copy];os_unfair_lock_unlock(&TextLock);}
+static void SetStatus(NSString *s){
+    os_unfair_lock_lock(&TextLock);Status=[s copy];if(!Log)Log=[NSMutableArray new];
+    NSDateFormatter *f=[NSDateFormatter new];f.dateFormat=@"HH:mm:ss";[Log addObject:[NSString stringWithFormat:@"%@ %@",[f stringFromDate:NSDate.date],s]];if(Log.count>20)[Log removeObjectAtIndex:0];
+    os_unfair_lock_unlock(&TextLock);
+}
+NSArray<NSString *> *TIOLocalListenAutoLog(void){os_unfair_lock_lock(&TextLock);NSArray *l=[Log copy]?:@[];os_unfair_lock_unlock(&TextLock);return l;}
+double TIOLocalListenAutoPeak(void){return Peak;}
+static void Remember(NSData *pcm){
+    if(!Recent)Recent=[NSMutableData new];[Recent appendData:pcm];
+    if(Recent.length>15*32000)[Recent replaceBytesInRange:NSMakeRange(0,Recent.length-15*32000) withBytes:NULL length:0];
+    const int16_t *s=pcm.bytes;int16_t m=0;for(NSUInteger i=0;i<pcm.length/2;i++){int16_t v=(int16_t)(s[i]<0?-s[i]:s[i]);if(v>m)m=v;}
+    Peak=MAX(Peak*0.98,(double)m);
+}
+static void SaveRecent(void){
+    if(!Recent.length)return;
+    NSURL *docs=[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *dir=[docs URLByAppendingPathComponent:@"TurboIOLocalListen" isDirectory:YES];[NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    [TIOLocalASRWav(Recent) writeToURL:[dir URLByAppendingPathComponent:@"last-session.wav"] atomically:YES];[Recent setLength:0];
+}
 NSString *TIOLocalListenAutoStatus(void){os_unfair_lock_lock(&TextLock);NSString *s=Status;os_unfair_lock_unlock(&TextLock);return s;}
 void TIOLocalListenAppendText(NSString *text,BOOL final){
     os_unfair_lock_lock(&TextLock);if(!Lines)Lines=[NSMutableArray new];
@@ -44,13 +67,17 @@ BOOL TIOLocalListenAutoEnabled(void){return [Prefs boolForKey:TIOLocalListenAuto
 
 static NSString *Hex(NSData *d){NSMutableString *s=[NSMutableString new];const uint8_t *b=d.bytes;for(NSUInteger i=0;i<MIN(d.length,8);i++)[s appendFormat:@"%02x",b[i]];return s;}
 BOOL TIOLocalListenIsAutoTrigger(NSString *key,NSString *chosen){
-    if(chosen.length)return [key isEqual:chosen];
-    // Automatic choice: the Timekettle feed only receives audio while captions run.
+    // Prefix match keeps a trigger chosen before per-track keys working.
+    if(chosen.length)return [key hasPrefix:chosen];
+    // Automatic choice: recorder audio while RayNeo's caption translation workflow runs,
+    // or the Timekettle feed, which only receives audio while captions run.
+    if([key hasPrefix:TIOLocalListenAgoraKey])return YES;
+    if([key hasPrefix:@"RayNeoAudioRecorderAdapter · notifyRecordData"])return TIOLocalListenCaptionRunning();
     return [key.lowercaseString containsString:@"tmk"]&&[key containsString:@"pushAudioData"];
 }
 static void Stop(NSString *why){
     if(!ASR)return;
-    [ASR stop];ASR=nil;Trigger=nil;
+    [ASR stop];ASR=nil;Trigger=nil;SaveRecent();TIOLocalListenSaveRaw();
     if(Opus){OpusDestroyFn destroy=(OpusDestroyFn)dlsym(RTLD_DEFAULT,"opus_decoder_destroy");if(destroy)destroy(Opus);Opus=NULL;}
     SetStatus(why);
 }
@@ -61,21 +88,22 @@ static void Start(NSString *key){
     asr.onText=^(NSString *text,BOOL final){TIOLocalListenAppendText(text,final);};
     __weak TIOLocalASR *weak=asr;
     asr.onStatus=^(NSString *s){dispatch_async(Q,^{if(ASR&&ASR==weak&&!Undecodable)SetStatus([@"Following Live Captions · " stringByAppendingString:s]);});};
-    ASR=asr;Trigger=key;Format=nil;Decoded=Failures=0;Undecodable=NO;
+    SetStatus([@"Engine: " stringByAppendingString:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind]);
+    ASR=asr;Trigger=key;Format=[key hasPrefix:TIOLocalListenAgoraKey]?@"pcm":nil;Decoded=Failures=0;Undecodable=NO;
     SetStatus(@"Live Captions detected, starting recognition…");
     [asr start];
 }
 static void Feed(NSData *d){
     if(Undecodable)return;
     if(!Format){NSString *g=TIOLocalListenFormatGuess(d);Format=[g hasPrefix:@"PCM16"]?@"pcm":([g hasPrefix:@"Ogg"]||[g hasPrefix:@"WAV"])?@"container":@"opus";}
-    if([Format isEqual:@"pcm"]){[ASR appendPCM16:d];Decoded++;return;}
+    if([Format isEqual:@"pcm"]){[ASR appendPCM16:d];Remember(d);Decoded++;return;}
     if([Format isEqual:@"container"]){Undecodable=YES;SetStatus(@"Audio arrives in a container format that is not decoded yet. Record a sample on this page.");return;}
     // The app links libopus, so its decoder is already in this process.
     if(!Opus){OpusCreateFn create=(OpusCreateFn)dlsym(RTLD_DEFAULT,"opus_decoder_create");int error=0;Opus=create?create(16000,1,&error):NULL;
         if(!Opus){Undecodable=YES;SetStatus(@"The app's Opus decoder was not found.");return;}}
     static int16_t pcm[5760];OpusDecodeFn decode=(OpusDecodeFn)dlsym(RTLD_DEFAULT,"opus_decode");
     int n=decode?decode(Opus,d.bytes,(int32_t)d.length,pcm,5760,0):-1;
-    if(n>0){[ASR appendPCM16:[NSData dataWithBytes:pcm length:(NSUInteger)n*2]];Decoded++;Failures=0;return;}
+    if(n>0){NSData *out=[NSData dataWithBytes:pcm length:(NSUInteger)n*2];[ASR appendPCM16:out];Remember(out);Decoded++;Failures=0;return;}
     if(++Failures>=10&&!Decoded){Undecodable=YES;SetStatus([NSString stringWithFormat:@"Audio is not raw Opus or PCM (%lu-byte packets starting %@). Record a sample on this page so the format can be worked out.",(unsigned long)d.length,Hex(d)]);}
 }
 void TIOLocalListenAutoPacket(NSString *key,NSData *packet){
@@ -87,6 +115,7 @@ void TIOLocalListenAutoPacket(NSString *key,NSData *packet){
         LastPacket=CFAbsoluteTimeGetCurrent();Feed(packet);
     });
 }
+void TIOLocalListenAutoWorkflowStopped(void){if(Q)dispatch_async(Q,^{Stop(@"Waiting for Live Captions · the last session ended");});}
 void TIOLocalListenAutoConfigure(NSUserDefaults *prefs){
     Prefs=prefs;Q=dispatch_queue_create("io.turboio.locallisten.auto",DISPATCH_QUEUE_SERIAL);
     SetStatus([Prefs boolForKey:TIOLocalListenAutoKey]?@"Waiting for Live Captions":@"Off");

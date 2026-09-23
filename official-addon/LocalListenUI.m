@@ -63,7 +63,7 @@ static NSArray<NSString *> *ModeDetails(void){return @[
 }
 - (void)refresh{self.taps=TIOLocalListenTaps();[self.tableView reloadData];}
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t{return 7;}
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Mode",@"Follow Live Captions",@"Recognition",@"Transcript",@"Step 0 · Observe",@"Audio Taps",@"Official Live Cues"][s];}
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s{return @[@"Mode",@"Follow Live Captions",@"Recognition",@"Transcript",@"Step 0 · Observe",@"Audio Taps",@"Official Results"][s];}
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s{
     if(s==0)return @"The mode is saved for the next steps. Nothing is processed locally yet.";
     if(s==1)return @"When the official Live Captions feed receives glasses audio, recognition starts on the same audio and stops 2.5 s after the feed goes quiet. Official captions keep running. Text appears under Transcript.";
@@ -72,7 +72,7 @@ static NSArray<NSString *> *ModeDetails(void){return @[
     return nil;
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s{
-    if(s==0)return 3;if(s==1)return 2;if(s==2)return 4;if(s==3)return 2;if(s==4)return 5;if(s==5)return MAX(1,self.taps.count);return 1;
+    if(s==0)return 3;if(s==1)return 2;if(s==2)return 4;if(s==3)return 2;if(s==4)return 5;if(s==5)return MAX(1,self.taps.count);return 2;
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)ip{
     UITableViewCell *c=[[UITableViewCell alloc]initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];TIOStyleResearchCell(c);
@@ -81,9 +81,9 @@ static NSArray<NSString *> *ModeDetails(void){return @[
         c.textLabel.text=ModeTitles()[ip.row];c.detailTextLabel.text=ModeDetails()[ip.row];
         c.accessoryType=[self.prefs integerForKey:TIOLocalListenModeKey]==ip.row?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
     }else if(ip.section==1){
-        if(ip.row==0){BOOL on=TIOLocalListenAutoEnabled();c.textLabel.text=@"Follow Live Captions";c.detailTextLabel.text=TIOLocalListenAutoStatus();UISwitch *sw=[UISwitch new];sw.on=on;[sw addTarget:self action:@selector(toggleAuto:) forControlEvents:UIControlEventValueChanged];c.accessoryView=sw;c.selectionStyle=UITableViewCellSelectionStyleNone;}
+        if(ip.row==0){BOOL on=TIOLocalListenAutoEnabled();c.textLabel.text=@"Follow Live Captions";double peak=TIOLocalListenAutoPeak();c.detailTextLabel.text=[NSString stringWithFormat:@"%@\nInput level: %@",TIOLocalListenAutoStatus(),peak>1?[NSString stringWithFormat:@"%.0f dBFS",20*log10(peak/32768)]:@"silent"];UISwitch *sw=[UISwitch new];sw.on=on;[sw addTarget:self action:@selector(toggleAuto:) forControlEvents:UIControlEventValueChanged];c.accessoryView=sw;c.selectionStyle=UITableViewCellSelectionStyleNone;}
         if(ip.row==1){NSString *chosen=[self.prefs stringForKey:TIOLocalListenTriggerKey];BOOL seen=NO;for(NSDictionary *tap in self.taps)if(TIOLocalListenIsAutoTrigger(tap[@"key"],chosen))seen=YES;
-            c.textLabel.text=@"Trigger";c.detailTextLabel.text=[NSString stringWithFormat:@"%@\n%@",chosen.length?chosen:@"Automatic · the Timekettle audio feed",seen?@"Seen in Audio Taps":@"Not seen yet. If captions run but nothing starts, pick the caption feed from Audio Taps here."];}
+            c.textLabel.text=@"Trigger";c.detailTextLabel.text=[NSString stringWithFormat:@"%@\n%@",chosen.length?chosen:@"Automatic · caption audio sent to Agora, or the RayNeo caption workflow",seen?@"Seen in Audio Taps":@"Not seen yet. If captions run but nothing starts, pick the caption feed from Audio Taps here."];}
     }else if(ip.section==2){
         NSString *engine=[self engine];BOOL openai=[engine isEqual:TIOLocalASROpenAIKind];
         if(ip.row==0){c.textLabel.text=@"Engine";c.detailTextLabel.text=openai?@"OpenAI · cloud, one sentence at a time":[engine isEqual:TIOLocalASROpenAILiveKind]?@"OpenAI Live · cloud, streaming (gpt-live-transcribe)":@"Apple · on-device, streaming";}
@@ -105,11 +105,15 @@ static NSArray<NSString *> *ModeDetails(void){return @[
         NSDictionary *tap=self.taps[ip.row];double span=[tap[@"last"] doubleValue]-[tap[@"first"] doubleValue];NSUInteger n=[tap[@"count"] unsignedIntegerValue];
         c.textLabel.text=tap[@"key"];
         NSMutableString *d=[NSMutableString stringWithFormat:@"%lu calls · %.1f/s · %@ thread · %@",(unsigned long)n,span>0?(n-1)/span:0,tap[@"thread"],tap[@"argClass"]];
+        if(tap[@"source"])[d appendFormat:@"\nsource: %@ → 16 kHz mono",tap[@"source"]];
         if(tap[@"lastSize"])[d appendFormat:@"\n%@ bytes total · size %@–%@ · %@\nfirst: %@",tap[@"bytes"],tap[@"minSize"],tap[@"maxSize"],tap[@"guess"],tap[@"firstHex"]];
         else [d appendFormat:@"\nlast: %@",tap[@"preview"]];
         c.detailTextLabel.text=d;c.selectionStyle=UITableViewCellSelectionStyleNone;
     }else{
-        NSDictionary *h=TIOLocalListenHint();c.selectionStyle=UITableViewCellSelectionStyleNone;
+        c.selectionStyle=UITableViewCellSelectionStyleNone;
+        if(ip.row==1){NSDictionary *cap=TIOLocalListenOfficialCaption();c.textLabel.text=cap?@"Last Official Caption":@"No official caption yet";
+            NSMutableString *d=[NSMutableString new];[cap[@"fields"] enumerateKeysAndObjectsUsingBlock:^(NSString *k,NSString *v,BOOL *stop){[d appendFormat:@"%@: %@\n",k,v];}];c.detailTextLabel.text=cap?d:@"Start Live Captions to compare with the transcript above.";return c;}
+        NSDictionary *h=TIOLocalListenHint();
         if(!h){c.textLabel.text=@"No hint yet";c.detailTextLabel.text=@"Start Live Cues and ask a question nearby.";return c;}
         NSDateFormatter *f=[NSDateFormatter new];f.dateFormat=@"HH:mm:ss";c.textLabel.text=[NSString stringWithFormat:@"Hint %@ at %@ · %@",h[@"count"],[f stringFromDate:h[@"time"]],h[@"class"]];
         NSMutableString *d=[NSMutableString new];[h[@"fields"] enumerateKeysAndObjectsUsingBlock:^(NSString *k,NSString *v,BOOL *stop){[d appendFormat:@"%@: %@\n",k,v];}];c.detailTextLabel.text=d;
@@ -122,7 +126,7 @@ static NSArray<NSString *> *ModeDetails(void){return @[
 }
 - (void)pickTrigger{
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Trigger" message:@"Which observed audio call means Live Captions is running." preferredStyle:UIAlertControllerStyleActionSheet];
-    [a addAction:[UIAlertAction actionWithTitle:@"Automatic (Timekettle feed)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.prefs removeObjectForKey:TIOLocalListenTriggerKey];[self refresh];}]];
+    [a addAction:[UIAlertAction actionWithTitle:@"Automatic (caption workflow audio)" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.prefs removeObjectForKey:TIOLocalListenTriggerKey];[self refresh];}]];
     for(NSDictionary *tap in self.taps)if(tap[@"lastSize"]){NSString *key=tap[@"key"];[a addAction:[UIAlertAction actionWithTitle:key style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){[self.prefs setObject:key forKey:TIOLocalListenTriggerKey];[self refresh];}]];}
     [a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];a.popoverPresentationController.sourceView=self.view;a.popoverPresentationController.sourceRect=CGRectMake(self.view.bounds.size.width/2,120,1,1);
     [self presentViewController:a animated:YES completion:nil];
