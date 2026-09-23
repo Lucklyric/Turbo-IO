@@ -23,5 +23,9 @@ int main(void){@autoreleasepool{
     for(NSUInteger i=0;i<src.length;i+=202)[dst appendData:[rs process:[src subdataWithRange:NSMakeRange(i,MIN(202,src.length-i))]]];
     NSUInteger samples=dst.length/2;assert(samples>=23990&&samples<=24010);
     const int16_t *o=dst.bytes;for(NSUInteger i=1;i<samples;i++)assert(abs(o[i]-o[i-1])<400);
-    NSLog(@"PASS: local ASR WAV header, speech segmenter and 24 kHz resampler");
+    // Sentence stream: punctuation ends sentences, decimals stay whole, deltas split anywhere.
+    TIOSentenceStream *ss=[TIOSentenceStream new];NSMutableArray *got=[NSMutableArray new];
+    for(NSString *d in @[@"今天天",@"气很好。明",@"天见！Pi is 3.",@"14. Next"])[got addObjectsFromArray:[ss append:d]];
+    assert(got.count==3&&[got[0] isEqual:@"今天天气很好。"]&&[got[1] isEqual:@"明天见！"]&&[got[2] isEqual:@"Pi is 3.14."]);assert([ss.current isEqual:@"Next"]);
+    NSLog(@"PASS: local ASR WAV header, speech segmenter, 24 kHz resampler and sentence stream");
 }return 0;}

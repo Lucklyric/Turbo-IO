@@ -5,6 +5,12 @@ NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT NSString *const TIOLocalASRAppleKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAIKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAILiveKind;
+FOUNDATION_EXPORT NSString *const TIOLocalASROpenAITranslateKind;
+// Splits an append-only text stream into finished sentences and the current tail.
+@interface TIOSentenceStream : NSObject
+- (NSArray<NSString *> *)append:(NSString *)delta;   // sentences completed by this delta
+@property(nonatomic,readonly) NSString *current;
+@end
 // Linear 16 kHz to 24 kHz resampler that keeps state across chunks. Exposed for tests.
 @interface TIOResampler24k : NSObject
 - (NSData *)process:(NSData *)pcm16k;
@@ -23,6 +29,9 @@ FOUNDATION_EXPORT NSData *TIOLocalASRWav(NSData *pcm16k);
 @property(nonatomic,copy,nullable) NSString *_Nullable (^keyProvider)(void);
 @property(nonatomic,copy,nullable) void (^onText)(NSString *text,BOOL final);
 @property(nonatomic,copy,nullable) void (^onStatus)(NSString *status);
+// Translate engine only: ISO-639-1 output language and the translated text stream.
+@property(nonatomic,copy) NSString *targetLanguage;
+@property(nonatomic,copy,nullable) void (^onTranslation)(NSString *text,BOOL final);
 - (void)start;
 - (void)appendPCM16:(NSData *)pcm16k;                         // any thread
 - (void)stop;

@@ -82,13 +82,23 @@ static void Stop(NSString *why){
     SetStatus(why);
 }
 static void Start(NSString *key){
-    TIOLocalASR *asr=[TIOLocalASR engineOfKind:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind];if(!asr)return;
+    // Glasses CC set to translate: use OpenAI Translate to the language chosen on the glasses.
+    // Script mode only needs recognition: never translate, and fall back from the translate engine.
+    BOOL script=TIOLocalScriptMode(Prefs);
+    NSString *glassesTarget=script?nil:TIOLocalGlassesTargetLanguage();
+    NSString *kind=glassesTarget?TIOLocalASROpenAITranslateKind:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind;
+    if(script&&[kind isEqual:TIOLocalASROpenAITranslateKind])kind=TIOLocalASROpenAILiveKind;
+    TIOLocalASR *asr=[TIOLocalASR engineOfKind:kind];if(!asr)return;
     asr.language=[Prefs stringForKey:TIOLocalListenLanguageKey]?:@"zh-CN";asr.model=[Prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";
     asr.keyProvider=^NSString *{return TIOLocalListenOpenAIKey();};
-    asr.onText=^(NSString *text,BOOL final){TIOLocalListenAppendText(text,final);};
+    asr.targetLanguage=glassesTarget?:[Prefs stringForKey:TIOLocalListenTargetLanguageKey]?:@"en";
+    asr.onText=^(NSString *text,BOOL final){TIOLocalListenAppendText(text,final);if(script)TIOLocalScriptHeard(text,final);else TIOLocalGlassesSource(text,final);};
+    asr.onTranslation=^(NSString *text,BOOL final){if(final)TIOLocalListenAppendText([@"→ " stringByAppendingString:text],YES);TIOLocalGlassesTarget(text,final);};
+    TIOLocalGlassesReset();
+    if(script)TIOLocalScriptStart([Prefs stringForKey:TIOLocalListenScriptKey]?:@"");
     __weak TIOLocalASR *weak=asr;
     asr.onStatus=^(NSString *s){dispatch_async(Q,^{if(ASR&&ASR==weak&&!Undecodable)SetStatus([@"Following Live Captions · " stringByAppendingString:s]);});};
-    SetStatus([@"Engine: " stringByAppendingString:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind]);
+    SetStatus([@"Engine: " stringByAppendingString:glassesTarget?[NSString stringWithFormat:@"%@ to %@ (glasses CC setting)",kind,glassesTarget]:kind]);
     ASR=asr;Trigger=key;Format=[key hasPrefix:TIOLocalListenAgoraKey]?@"pcm":nil;Decoded=Failures=0;Undecodable=NO;
     SetStatus(@"Live Captions detected, starting recognition…");
     [asr start];

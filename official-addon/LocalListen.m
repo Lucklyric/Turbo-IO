@@ -146,6 +146,9 @@ static void HookWorkflow(Class cls,Method m,NSString *key,BOOL running){
 }
 BOOL TIOLocalListenCaptionRunning(void){return CaptionRunning;}
 NSString *const TIOLocalListenAgoraKey=@"AgoraRtcEngineKit · pushExternalAudioFrameRawData";
+NSString *const TIOLocalListenSilenceCloudKey=@"localListenSilenceCloud";
+NSString *const TIOLocalListenTargetLanguageKey=@"localListenTargetLanguage";
+BOOL TIOLocalListenSilenceCloud(void){return [Prefs objectForKey:TIOLocalListenSilenceCloudKey]?[Prefs boolForKey:TIOLocalListenSilenceCloudKey]:YES;}
 // The last 15 s of untouched Agora input, for working out the channel layout offline.
 static NSMutableData *RawRecent;static NSString *RawFormat;
 // Raw glasses messages: every BLE event the official app hands to Flutter, counted by
@@ -212,6 +215,9 @@ static BOOL HookAgora(NSMutableString *inv){
             @try{NSData *pcm=To16kMono(data,samples/channels,rate,channels);if(pcm){Observe(key,pcm);
                 os_unfair_lock_lock(&Lock);Taps[key][@"source"]=[NSString stringWithFormat:@"%ld Hz, %ld ch, %ld frames per call, ts %.0f ms",(long)rate,(long)channels,(long)(samples/channels),ts*1000];os_unfair_lock_unlock(&Lock);}}@catch(NSException *e){}
         }
+        // Keep the official stream's timing but send zeros, so no speech leaves for the official cloud.
+        NSMutableData *silence=nil;
+        if(Active&&data&&samples>0&&samples<=96000&&TIOLocalListenAutoEnabled()&&TIOLocalListenSilenceCloud()){silence=[NSMutableData dataWithLength:(NSUInteger)samples*2];data=silence.mutableBytes;}
         return ((int(*)(id,SEL,void *,NSInteger,NSInteger,NSInteger,NSInteger,NSTimeInterval))original)(obj,sel,data,samples,rate,channels,track,ts);
     }));
     [inv appendFormat:@"\nAgoraRtcEngineKit\n  -%@ %s  [observed]\n",NSStringFromSelector(sel),method_getTypeEncoding(m)];
@@ -231,7 +237,7 @@ static void WriteDiagnostics(void){
     if(!Installed)return;
     NSDictionary *hint=TIOLocalListenHint();
     NSDictionary *d=@{@"time":@(NSDate.date.timeIntervalSince1970),@"active":@(Active),@"auto":@([Prefs boolForKey:TIOLocalListenAutoKey]),@"autoStatus":TIOLocalListenAutoStatus(),@"autoLog":TIOLocalListenAutoLog(),@"peak":@(TIOLocalListenAutoPeak()),@"transcriptLength":@(TIOLocalListenTranscript().length),
-        @"trigger":[Prefs stringForKey:TIOLocalListenTriggerKey]?:@"automatic",@"captionRunning":@(CaptionRunning),@"officialCaptionFields":[TIOLocalListenOfficialCaption()[@"fields"] allKeys]?:@[],@"taps":TIOLocalListenTaps(),@"hintCount":hint[@"count"]?:@0,@"hintFields":[hint[@"fields"] allKeys]?:@[],@"inventory":Inventory};
+        @"trigger":[Prefs stringForKey:TIOLocalListenTriggerKey]?:@"automatic",@"captionRunning":@(CaptionRunning),@"officialCaptionFields":[TIOLocalListenOfficialCaption()[@"fields"] allKeys]?:@[],@"glasses":TIOLocalGlassesDiagnostics(),@"taps":TIOLocalListenTaps(),@"hintCount":hint[@"count"]?:@0,@"hintFields":[hint[@"fields"] allKeys]?:@[],@"inventory":Inventory};
     NSData *json=[NSJSONSerialization dataWithJSONObject:d options:NSJSONWritingPrettyPrinted error:nil];NSURL *dir=SampleDirectory();
     [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
     [json writeToURL:[dir URLByAppendingPathComponent:@"diagnostics.json"] atomically:YES];

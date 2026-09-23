@@ -6,6 +6,28 @@
 NSString *const TIOLocalASRAppleKind=@"apple";
 NSString *const TIOLocalASROpenAIKind=@"openai";
 NSString *const TIOLocalASROpenAILiveKind=@"openai-live";
+NSString *const TIOLocalASROpenAITranslateKind=@"openai-translate";
+
+@implementation TIOSentenceStream{NSMutableString *_buffer;}
+- (instancetype)init{if((self=[super init]))_buffer=[NSMutableString new];return self;}
+- (NSString *)current{return [_buffer stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];}
+- (NSArray<NSString *> *)append:(NSString *)delta{
+    [_buffer appendString:delta?:@""];NSMutableArray *done=[NSMutableArray new];
+    NSCharacterSet *enders=[NSCharacterSet characterSetWithCharactersInString:@"。！？!?；;\n"];
+    for(;;){
+        NSUInteger cut=NSNotFound;
+        for(NSUInteger i=0;i<_buffer.length;i++){unichar c=[_buffer characterAtIndex:i];
+            // A period ends a sentence only once a space follows, so "3.14" stays whole.
+            if([enders characterIsMember:c]||(c=='.'&&i+1<_buffer.length&&[NSCharacterSet.whitespaceCharacterSet characterIsMember:[_buffer characterAtIndex:i+1]])){cut=i+1;break;}}
+        // Long unpunctuated speech still scrolls: break at 80 characters.
+        if(cut==NSNotFound&&_buffer.length>80){NSRange space=[_buffer rangeOfCharacterFromSet:NSCharacterSet.whitespaceCharacterSet options:NSBackwardsSearch range:NSMakeRange(40,40)];cut=space.location!=NSNotFound?space.location+1:80;}
+        if(cut==NSNotFound)break;
+        NSString *s=[[_buffer substringToIndex:cut] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [_buffer deleteCharactersInRange:NSMakeRange(0,cut)];if(s.length)[done addObject:s];
+    }
+    return done;
+}
+@end
 enum {kFrameBytes=640};   // 20 ms of 16 kHz mono PCM16
 
 NSData *TIOLocalASRWav(NSData *pcm){
@@ -53,23 +75,27 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 @interface TIOLocalASR ()
 - (void)status:(NSString *)s;
 - (void)emit:(NSString *)text final:(BOOL)final;
+- (void)emitTranslation:(NSString *)text final:(BOOL)final;
 @end
 @interface TIOAppleASR : TIOLocalASR @end
 @interface TIOOpenAIASR : TIOLocalASR @end
 @interface TIOOpenAILiveASR : TIOLocalASR @end
+@interface TIOOpenAITranslateASR : TIOLocalASR @end
 @implementation TIOLocalASR
 + (instancetype)engineOfKind:(NSString *)kind{
     if([kind isEqual:TIOLocalASRAppleKind])return [TIOAppleASR new];
     if([kind isEqual:TIOLocalASROpenAIKind])return [TIOOpenAIASR new];
     if([kind isEqual:TIOLocalASROpenAILiveKind])return [TIOOpenAILiveASR new];
+    if([kind isEqual:TIOLocalASROpenAITranslateKind])return [TIOOpenAITranslateASR new];
     return nil;
 }
-- (instancetype)init{if((self=[super init]))_language=@"zh-CN";return self;}
+- (instancetype)init{if((self=[super init])){_language=@"zh-CN";_targetLanguage=@"en";}return self;}
 - (void)start{}
 - (void)appendPCM16:(NSData *)pcm{}
 - (void)stop{}
 - (void)status:(NSString *)s{void (^b)(NSString *)=self.onStatus;if(b)dispatch_async(dispatch_get_main_queue(),^{b(s);});}
 - (void)emit:(NSString *)text final:(BOOL)final{void (^b)(NSString *,BOOL)=self.onText;if(b&&text.length)dispatch_async(dispatch_get_main_queue(),^{b(text,final);});}
+- (void)emitTranslation:(NSString *)text final:(BOOL)final{void (^b)(NSString *,BOOL)=self.onTranslation;if(b&&text.length)dispatch_async(dispatch_get_main_queue(),^{b(text,final);});}
 @end
 
 @implementation TIOAppleASR{dispatch_queue_t _q;SFSpeechRecognizer *_recognizer;SFSpeechAudioBufferRecognitionRequest *_request;SFSpeechRecognitionTask *_task;AVAudioFormat *_format;CFAbsoluteTime _began;BOOL _running;NSUInteger _generation;}
@@ -230,6 +256,65 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         if(self->_outgoing.length)[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];
         [self send:@{@"type":@"input_audio_buffer.commit"}];
         // Leave a moment for the last transcript before closing.
+        NSURLSessionWebSocketTask *socket=self->_socket;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),self->_q,^{[socket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];if(self->_socket==socket)self->_socket=nil;});
+        [self status:@"Stopped"];
+    });
+}
+@end
+
+#pragma mark - OpenAI Realtime translation
+
+// One WebSocket returns both the source transcript and the translation while the
+// speaker is still talking. Translated audio is ignored.
+@implementation TIOOpenAITranslateASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;TIOSentenceStream *_source,*_target;BOOL _running;}
+- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-translate",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_resampler=[TIOResampler24k new];_source=[TIOSentenceStream new];_target=[TIOSentenceStream new];}return self;}
+- (void)send:(NSDictionary *)event{
+    NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){if(error)[self status:[@"OpenAI Translate send failed: " stringByAppendingString:error.localizedDescription]];}];
+}
+- (void)start{
+    dispatch_async(_q,^{
+        NSString *key=self.keyProvider?self.keyProvider():nil;
+        if(!key.length){[self status:@"Set an api.openai.com endpoint and key in Endpoint & API Key first."];return;}
+        NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate"]];
+        [r setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
+        self->_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
+        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;
+        [self send:@{@"type":@"session.update",@"session":@{@"audio":@{@"input":@{@"transcription":@{@"model":@"gpt-realtime-whisper"}},@"output":@{@"language":self.targetLanguage?:@"en"}}}}];
+        [self status:@"Connecting · OpenAI Translate"];[self receive];
+    });
+}
+- (void)receive{
+    NSURLSessionWebSocketTask *socket=_socket;__weak typeof(self) weak=self;
+    [socket receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage *message,NSError *error){
+        typeof(self) s=weak;if(!s)return;
+        dispatch_async(s->_q,^{
+            if(socket!=s->_socket)return;
+            if(error){if(s->_running)[s status:[@"OpenAI Translate disconnected: " stringByAppendingString:error.localizedDescription]];s->_running=NO;return;}
+            [s handle:message.string];[s receive];
+        });
+    }];
+}
+- (void)handle:(NSString *)text{
+    id j=text?[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:nil;if(![j isKindOfClass:NSDictionary.class])return;
+    NSString *type=j[@"type"],*delta=[j[@"delta"] isKindOfClass:NSString.class]?j[@"delta"]:nil;
+    if([type isEqual:@"session.updated"])[self status:[NSString stringWithFormat:@"Listening · OpenAI Translate to %@",self.targetLanguage]];
+    else if([type isEqual:@"session.input_transcript.delta"]&&delta){for(NSString *s in [_source append:delta])[self emit:s final:YES];[self emit:_source.current final:NO];}
+    else if([type isEqual:@"session.output_transcript.delta"]&&delta){for(NSString *s in [_target append:delta])[self emitTranslation:s final:YES];[self emitTranslation:_target.current final:NO];}
+    else if([type isEqual:@"error"]){id m=[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;[self status:[@"OpenAI Translate error: " stringByAppendingString:[m isKindOfClass:NSString.class]?m:@"no details"]];}
+}
+- (void)appendPCM16:(NSData *)pcm{
+    dispatch_async(_q,^{
+        if(!self->_running)return;
+        [self->_outgoing appendData:[self->_resampler process:pcm]];
+        // 200 ms of 24 kHz PCM16 per event, as the translation guide recommends.
+        if(self->_outgoing.length>=9600){[self send:@{@"type":@"session.input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+    });
+}
+- (void)stop{
+    dispatch_async(_q,^{
+        if(!self->_running)return;self->_running=NO;
         NSURLSessionWebSocketTask *socket=self->_socket;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),self->_q,^{[socket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];if(self->_socket==socket)self->_socket=nil;});
         [self status:@"Stopped"];

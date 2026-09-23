@@ -42,5 +42,26 @@ FOUNDATION_EXPORT NSDictionary *_Nullable TIOLocalListenOfficialCaption(void);
 FOUNDATION_EXPORT void TIOLocalListenAppendText(NSString *text,BOOL final);
 FOUNDATION_EXPORT NSString *TIOLocalListenTranscript(void);
 FOUNDATION_EXPORT void TIOLocalListenClearTranscript(void);
+// Privacy: audio pushed to the official cloud is replaced with silence (on unless turned off).
+FOUNDATION_EXPORT NSString *const TIOLocalListenSilenceCloudKey;
+FOUNDATION_EXPORT NSString *const TIOLocalListenTargetLanguageKey;
+FOUNDATION_EXPORT BOOL TIOLocalListenSilenceCloud(void);
+// Local captions on the glasses (LocalGlasses.m).
+FOUNDATION_EXPORT void TIOLocalGlassesObserveCall(id plugin,NSString *method,NSDictionary *args);
+FOUNDATION_EXPORT void TIOLocalGlassesSource(NSString *text,BOOL final);
+FOUNDATION_EXPORT void TIOLocalGlassesTarget(NSString *text,BOOL final);
+// ISO-639-1 target from the glasses CC settings, or nil when CC is not translating.
+FOUNDATION_EXPORT NSString *_Nullable TIOLocalGlassesTargetLanguage(void);
+FOUNDATION_EXPORT void TIOLocalGlassesReset(void);
+FOUNDATION_EXPORT void TIOLocalGlassesShowText(NSString *text);
+// Script mode (LocalScript.m): TIOLocalListenModeKey 1 = Script, otherwise Translation.
+FOUNDATION_EXPORT NSString *const TIOLocalListenScriptKey;
+FOUNDATION_EXPORT BOOL TIOLocalScriptMode(NSUserDefaults *prefs);
+FOUNDATION_EXPORT void TIOLocalScriptStart(NSString *script);
+FOUNDATION_EXPORT void TIOLocalScriptHeard(NSString *text,BOOL final);
+FOUNDATION_EXPORT NSString *TIOLocalScriptStatus(void);
+FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);
+FOUNDATION_EXPORT void TIOLocalGlassesObserveEvent(NSDictionary *event);
+FOUNDATION_EXPORT NSDictionary *TIOLocalGlassesDiagnostics(void);
 FOUNDATION_EXPORT UIViewController *TIOLocalListenController(void);
 NS_ASSUME_NONNULL_END
