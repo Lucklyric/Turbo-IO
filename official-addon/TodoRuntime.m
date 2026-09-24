@@ -65,7 +65,7 @@ static void MethodHook(id self,SEL cmd,id call,id result){
 #if TIO_OTA_RESEARCH_ENABLED
     if(TIOOTAFlashBlockCall(call)){if(result)((void(^)(id))result)(@{@"success":@NO,@"message":@"Turbo IO experimental transfer gate: not authorized or packet mismatch"});return;}
 #endif
-    {NSString *method=Get(call,@"method");id args=Get(call,@"arguments");if([args isKindOfClass:NSDictionary.class]){void(^work)(void)=^{TIOProtocolObserveCall(self,method,args);TIONewsTeleObserveCall(self,method,args);TIONavObserveCall(self,method,args);TIOSubtitleObserveCall(self,method,args);TIOLocalGlassesObserveCall(self,method,args);};if(NSThread.isMainThread)work();else dispatch_async(dispatch_get_main_queue(),work);}}
+    {NSString *method=Get(call,@"method");id args=Get(call,@"arguments");if([args isKindOfClass:NSDictionary.class]){void(^work)(void)=^{TIOProtocolObserveCall(self,method,args);TIONewsTeleObserveCall(self,method,args);TIONavObserveCall(self,method,args);TIOSubtitleObserveCall(self,method,args);TIOLocalGlassesObserveCall(self,method,args);TIOLocalCuesObserveCall(self,method,args);};if(NSThread.isMainThread)work();else dispatch_async(dispatch_get_main_queue(),work);}}
     if([Get(call,@"method") isEqual:@"rayneonet_sendMessage"]){id args=Get(call,@"arguments");if([args isKindOfClass:NSDictionary.class]&&[args[@"businessId"] isEqual:@22]){void (^work)(void)=^{ObserveSnapshot(args);};if(NSThread.isMainThread)work();else dispatch_async(dispatch_get_main_queue(),work);}}
     id args=Get(call,@"arguments");
     if([Get(call,@"method") isEqual:@"rayneonet_sendFile"]&&[args isKindOfClass:NSDictionary.class]&&result){
@@ -91,7 +91,7 @@ static void Send(id self,SEL cmd,NSString *channel,NSData *message,id reply){
 #endif
 #endif
                 TIOLocalListenObserveEvent(e);
-                dispatch_async(dispatch_get_main_queue(),^{TIOProtocolObserveEvent(e);TIONewsTeleObserveEvent(e);TIONavObserveEvent(e);TIOSubtitleObserveEvent(e);TIOLocalGlassesObserveEvent(e);});
+                dispatch_async(dispatch_get_main_queue(),^{TIOProtocolObserveEvent(e);TIONewsTeleObserveEvent(e);TIONavObserveEvent(e);TIOSubtitleObserveEvent(e);TIOLocalGlassesObserveEvent(e);TIOLocalCuesObserveEvent(e);});
                 if(physical)dispatch_async(dispatch_get_main_queue(),^{PhysicalEvents++;if(TestWire.length&&[physical[@"wireId"] isEqual:TestWire]&&[physical[@"deviceId"] isEqual:TestDevice]){PhysicalComplete=[physical[@"status"] isEqual:@1];State=PhysicalComplete?@"Glasses reported this test item as done; real ID matches":@"Glasses reported this test item as not done";SaveEvidence();}});
             }
         }}@catch(NSException *e){}

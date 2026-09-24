@@ -282,7 +282,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"navigation"])c.detailTextLabel.text=@"AMap search / map pin / walk simulation → always-on Glasses text. Requires your own iOS key";
     if([r[@"key"] isEqual:@"archive"])c.detailTextLabel.text=@"Export Markdown and JSON together";
     if([r[@"key"] isEqual:@"localListen"])c.detailTextLabel.text=@"Observe glasses audio and protocol messages";
-    if([r[@"key"] isEqual:@"captions"])c.detailTextLabel.text=TIOLocalListenAutoEnabled()?[NSString stringWithFormat:@"On · %@",[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==1?@"Script":@"Translation"]:@"Off · your own captions, translation or script on the glasses CC";
+    if([r[@"key"] isEqual:@"captions"])c.detailTextLabel.text=TIOLocalListenAutoEnabled()?[NSString stringWithFormat:@"On · %@",[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==1?@"Script":[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==2?@"Cues":@"Translation"]:@"Off · your own captions, translation, script or Live Cues on the glasses";
     if([r[@"key"] isEqual:@"capture"])c.detailTextLabel.text=@"Saves only future Lifelog text; does not start the microphone";
     if([r[@"key"] isEqual:@"status"])c.accessoryType=UITableViewCellAccessoryNone;
     return c;

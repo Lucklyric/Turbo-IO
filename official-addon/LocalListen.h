@@ -56,12 +56,24 @@ FOUNDATION_EXPORT void TIOLocalGlassesTarget(NSString *text,BOOL final);
 FOUNDATION_EXPORT NSString *_Nullable TIOLocalGlassesTargetLanguage(void);
 FOUNDATION_EXPORT void TIOLocalGlassesReset(void);
 FOUNDATION_EXPORT void TIOLocalGlassesShowText(NSString *text);
+FOUNDATION_EXPORT void TIOLocalGlassesHint(NSString *hint);
+// Translation and Script modes: also run the Cues engine on the same audio and show its hints.
+FOUNDATION_EXPORT NSString *const TIOLocalListenHintsKey;
 // Script mode (LocalScript.m): TIOLocalListenModeKey 1 = Script, otherwise Translation.
 FOUNDATION_EXPORT NSString *const TIOLocalListenScriptKey;
 FOUNDATION_EXPORT BOOL TIOLocalScriptMode(NSUserDefaults *prefs);
 FOUNDATION_EXPORT void TIOLocalScriptStart(NSString *script);
 FOUNDATION_EXPORT void TIOLocalScriptHeard(NSString *text,BOOL final);
 FOUNDATION_EXPORT NSString *TIOLocalScriptStatus(void);
+FOUNDATION_EXPORT void TIOLocalScriptHint(NSString *hint);
+// Live Cues mode (LocalCues.m): TIOLocalListenModeKey 2.
+FOUNDATION_EXPORT void TIOLocalCuesObserveCall(id plugin,NSString *method,id _Nullable args);
+FOUNDATION_EXPORT void TIOLocalCuesObserveEvent(NSDictionary *event);
+FOUNDATION_EXPORT void TIOLocalCuesQuestion(NSString *text);
+FOUNDATION_EXPORT void TIOLocalCuesHint(NSString *hint);
+FOUNDATION_EXPORT BOOL TIOLocalCuesOpen(void);
+FOUNDATION_EXPORT NSString *TIOLocalCuesStatus(void);
+FOUNDATION_EXPORT NSDictionary *TIOLocalCuesDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);
 FOUNDATION_EXPORT void TIOLocalGlassesObserveEvent(NSDictionary *event);
 FOUNDATION_EXPORT NSDictionary *TIOLocalGlassesDiagnostics(void);

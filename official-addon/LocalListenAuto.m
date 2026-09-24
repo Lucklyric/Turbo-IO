@@ -17,7 +17,8 @@ typedef void (*OpusDestroyFn)(void *);
 static dispatch_queue_t Q;
 static dispatch_source_t Watchdog;
 static NSUserDefaults *Prefs;
-static TIOLocalASR *ASR;
+static TIOLocalASR *ASR,*Hints,*Src;
+NSString *const TIOLocalListenHintsKey=@"localListenHints";
 static NSString *Trigger,*Format;
 static CFAbsoluteTime LastPacket;
 static void *Opus;
@@ -70,6 +71,8 @@ BOOL TIOLocalListenAutoEnabled(void){return [Prefs boolForKey:TIOLocalListenAuto
 static NSString *Hex(NSData *d){NSMutableString *s=[NSMutableString new];const uint8_t *b=d.bytes;for(NSUInteger i=0;i<MIN(d.length,8);i++)[s appendFormat:@"%02x",b[i]];return s;}
 BOOL TIOLocalListenIsAutoTrigger(NSString *key,NSString *chosen){
     // Prefix match keeps a trigger chosen before per-track keys working.
+    // Cues always listens to the Live Cues recorder audio, whatever caption source is chosen.
+    if([Prefs integerForKey:TIOLocalListenModeKey]==2)return [key hasPrefix:@"RayNeoAudioRecorderAdapter · notifyRecordData"]&&TIOLocalCuesOpen();
     if(chosen.length)return [key hasPrefix:chosen];
     // Automatic choice: recorder audio while RayNeo's caption translation workflow runs,
     // or the Timekettle feed, which only receives audio while captions run.
@@ -79,28 +82,46 @@ BOOL TIOLocalListenIsAutoTrigger(NSString *key,NSString *chosen){
 }
 static void Stop(NSString *why){
     if(!ASR)return;
-    [ASR stop];ASR=nil;Trigger=nil;SaveRecent();TIOLocalListenSaveRaw();
+    [ASR stop];ASR=nil;[Hints stop];Hints=nil;[Src stop];Src=nil;Trigger=nil;SaveRecent();TIOLocalListenSaveRaw();
     if(Opus){OpusDestroyFn destroy=(OpusDestroyFn)dlsym(RTLD_DEFAULT,"opus_decoder_destroy");if(destroy)destroy(Opus);Opus=NULL;}
     SetStatus(why);
 }
 static void Start(NSString *key){
     // Glasses CC set to translate: use OpenAI Translate to the language chosen on the glasses.
     // Script mode only needs recognition: never translate, and fall back from the translate engine.
-    BOOL script=TIOLocalScriptMode(Prefs);
-    NSString *glassesTarget=script?nil:TIOLocalGlassesTargetLanguage();
-    NSString *kind=glassesTarget?TIOLocalASROpenAITranslateKind:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind;
+    BOOL script=TIOLocalScriptMode(Prefs),cues=[Prefs integerForKey:TIOLocalListenModeKey]==2;
+    NSString *glassesTarget=script||cues?nil:TIOLocalGlassesTargetLanguage();
+    NSString *kind=cues?TIOLocalASROpenAICuesKind:glassesTarget?TIOLocalASROpenAITranslateKind:[Prefs stringForKey:TIOLocalListenASRKey]?:TIOLocalASRAppleKind;
     if(script&&[kind isEqual:TIOLocalASROpenAITranslateKind])kind=TIOLocalASROpenAILiveKind;
     TIOLocalASR *asr=[TIOLocalASR engineOfKind:kind];if(!asr)return;
     asr.language=[Prefs stringForKey:TIOLocalListenLanguageKey]?:@"zh-CN";asr.model=[Prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";
     asr.keyProvider=^NSString *{return TIOLocalListenOpenAIKey();};
     asr.targetLanguage=glassesTarget?:[Prefs stringForKey:TIOLocalListenTargetLanguageKey]?:@"en";
-    asr.onText=^(NSString *text,BOOL final){TIOLocalListenAppendText(text,final);if(script)TIOLocalScriptHeard(text,final);else TIOLocalGlassesSource(text,final);};
-    asr.onTranslation=^(NSString *text,BOOL final){if(final)TIOLocalListenAppendText([@"→ " stringByAppendingString:text],YES);TIOLocalGlassesTarget(text,final);};
+    asr.onText=^(NSString *text,BOOL final){if(glassesTarget)return;TIOLocalListenAppendText(text,final);if(cues){if(final)TIOLocalCuesQuestion(text);}else if(script)TIOLocalScriptHeard(text,final);else TIOLocalGlassesSource(text,final);};
+    asr.onTranslation=^(NSString *text,BOOL final){if(final)TIOLocalListenAppendText([@"→ " stringByAppendingString:text],YES);if(cues)TIOLocalCuesHint(text);else TIOLocalGlassesTarget(text,final);};
     TIOLocalGlassesReset();
     if(script)TIOLocalScriptStart([Prefs stringForKey:TIOLocalListenScriptKey]?:@"");
     __weak TIOLocalASR *weak=asr;
     asr.onStatus=^(NSString *s){dispatch_async(Q,^{if(ASR&&ASR==weak&&!Undecodable)SetStatus([@"Following Live Captions · " stringByAppendingString:s]);});};
     SetStatus([@"Engine: " stringByAppendingString:glassesTarget?[NSString stringWithFormat:@"%@ to %@ (glasses CC setting)",kind,glassesTarget]:kind]);
+    // OpenAI Translate sends its source transcript only now and then, so while translating
+    // the original comes from OpenAI Live on the same audio and Translate gives the translation.
+    if(glassesTarget){
+        TIOLocalASR *o=[TIOLocalASR engineOfKind:TIOLocalASROpenAILiveKind];o.keyProvider=asr.keyProvider;o.language=asr.language;o.model=asr.model;
+        __weak TIOLocalASR *weakO=o;
+        o.onStatus=^(NSString *s){dispatch_async(Q,^{if(Src&&Src==weakO&&!Undecodable)SetStatus([@"Original · " stringByAppendingString:s]);});};
+        o.onText=^(NSString *text,BOOL final){TIOLocalListenAppendText(text,final);TIOLocalGlassesSource(text,final);};
+        Src=o;[o start];
+    }
+    // Hints: a second engine hears the same audio; its answers join the caption rounds.
+    if(!cues&&[Prefs boolForKey:TIOLocalListenHintsKey]){
+        TIOLocalASR *h=[TIOLocalASR engineOfKind:TIOLocalASROpenAICuesKind];h.keyProvider=asr.keyProvider;
+        __weak TIOLocalASR *weakH=h;
+        h.onStatus=^(NSString *s){dispatch_async(Q,^{if(Hints&&Hints==weakH)SetStatus([@"Hints · " stringByAppendingString:s]);});};
+        h.onText=^(NSString *text,BOOL final){if(final)dispatch_async(Q,^{if(Hints&&Hints==weakH)SetStatus([NSString stringWithFormat:@"Hints · heard %lu characters",(unsigned long)text.length]);});};
+        h.onTranslation=^(NSString *text,BOOL final){TIOLocalListenAppendText([NSString stringWithFormat:@"[Hint: %@]",text],YES);if(script)TIOLocalScriptHint(text);else TIOLocalGlassesHint(text);};
+        Hints=h;[h start];
+    }
     ASR=asr;Trigger=key;Format=[key hasPrefix:TIOLocalListenAgoraKey]?@"pcm":nil;Decoded=Failures=0;Undecodable=NO;
     SetStatus(@"Live Captions detected, starting recognition…");
     [asr start];
@@ -108,14 +129,14 @@ static void Start(NSString *key){
 static void Feed(NSData *d){
     if(Undecodable)return;
     if(!Format){NSString *g=TIOLocalListenFormatGuess(d);Format=[g hasPrefix:@"PCM16"]?@"pcm":([g hasPrefix:@"Ogg"]||[g hasPrefix:@"WAV"])?@"container":@"opus";}
-    if([Format isEqual:@"pcm"]){[ASR appendPCM16:d];Remember(d);Decoded++;return;}
+    if([Format isEqual:@"pcm"]){[ASR appendPCM16:d];[Src appendPCM16:d];[Hints appendPCM16:d];Remember(d);Decoded++;return;}
     if([Format isEqual:@"container"]){Undecodable=YES;SetStatus(@"Audio arrives in a container format that is not decoded yet. Record a sample on this page.");return;}
     // The app links libopus, so its decoder is already in this process.
     if(!Opus){OpusCreateFn create=(OpusCreateFn)dlsym(RTLD_DEFAULT,"opus_decoder_create");int error=0;Opus=create?create(16000,1,&error):NULL;
         if(!Opus){Undecodable=YES;SetStatus(@"The app's Opus decoder was not found.");return;}}
     static int16_t pcm[5760];OpusDecodeFn decode=(OpusDecodeFn)dlsym(RTLD_DEFAULT,"opus_decode");
     int n=decode?decode(Opus,d.bytes,(int32_t)d.length,pcm,5760,0):-1;
-    if(n>0){NSData *out=[NSData dataWithBytes:pcm length:(NSUInteger)n*2];[ASR appendPCM16:out];Remember(out);Decoded++;Failures=0;return;}
+    if(n>0){NSData *out=[NSData dataWithBytes:pcm length:(NSUInteger)n*2];[ASR appendPCM16:out];[Src appendPCM16:out];[Hints appendPCM16:out];Remember(out);Decoded++;Failures=0;return;}
     if(++Failures>=10&&!Decoded){Undecodable=YES;SetStatus([NSString stringWithFormat:@"Audio is not raw Opus or PCM (%lu-byte packets starting %@). Record a sample on this page so the format can be worked out.",(unsigned long)d.length,Hex(d)]);}
 }
 void TIOLocalListenAutoPacket(NSString *key,NSData *packet){

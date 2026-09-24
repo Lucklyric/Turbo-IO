@@ -1,3 +1,4 @@
+#import <os/lock.h>
 #import "LocalASR.h"
 #import <Speech/Speech.h>
 #import <AVFoundation/AVFoundation.h>
@@ -7,6 +8,11 @@ NSString *const TIOLocalASRAppleKind=@"apple";
 NSString *const TIOLocalASROpenAIKind=@"openai";
 NSString *const TIOLocalASROpenAILiveKind=@"openai-live";
 NSString *const TIOLocalASROpenAITranslateKind=@"openai-translate";
+NSString *const TIOLocalASROpenAICuesKind=@"openai-cues";
+// Development aid: how many events of each type the OpenAI Translate socket delivered.
+static NSMutableDictionary<NSString *,NSNumber *> *TranslateEvents;
+static os_unfair_lock EventsLock=OS_UNFAIR_LOCK_INIT;
+NSDictionary *TIOLocalASRTranslateEvents(void){os_unfair_lock_lock(&EventsLock);NSDictionary *d=[TranslateEvents copy]?:@{};os_unfair_lock_unlock(&EventsLock);return d;}
 
 @implementation TIOSentenceStream{NSMutableString *_buffer;}
 - (instancetype)init{if((self=[super init]))_buffer=[NSMutableString new];return self;}
@@ -81,12 +87,14 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 @interface TIOOpenAIASR : TIOLocalASR @end
 @interface TIOOpenAILiveASR : TIOLocalASR @end
 @interface TIOOpenAITranslateASR : TIOLocalASR @end
+@interface TIOOpenAICuesASR : TIOLocalASR @end
 @implementation TIOLocalASR
 + (instancetype)engineOfKind:(NSString *)kind{
     if([kind isEqual:TIOLocalASRAppleKind])return [TIOAppleASR new];
     if([kind isEqual:TIOLocalASROpenAIKind])return [TIOOpenAIASR new];
     if([kind isEqual:TIOLocalASROpenAILiveKind])return [TIOOpenAILiveASR new];
     if([kind isEqual:TIOLocalASROpenAITranslateKind])return [TIOOpenAITranslateASR new];
+    if([kind isEqual:TIOLocalASROpenAICuesKind])return [TIOOpenAICuesASR new];
     return nil;
 }
 - (instancetype)init{if((self=[super init])){_language=@"zh-CN";_targetLanguage=@"en";}return self;}
@@ -299,6 +307,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 - (void)handle:(NSString *)text{
     id j=text?[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:nil;if(![j isKindOfClass:NSDictionary.class])return;
     NSString *type=j[@"type"],*delta=[j[@"delta"] isKindOfClass:NSString.class]?j[@"delta"]:nil;
+    if(type){os_unfair_lock_lock(&EventsLock);if(!TranslateEvents)TranslateEvents=[NSMutableDictionary new];TranslateEvents[type]=@(TranslateEvents[type].unsignedIntegerValue+1);os_unfair_lock_unlock(&EventsLock);}
     if([type isEqual:@"session.updated"])[self status:[NSString stringWithFormat:@"Listening · OpenAI Translate to %@",self.targetLanguage]];
     else if([type isEqual:@"session.input_transcript.delta"]&&delta){for(NSString *s in [_source append:delta])[self emit:s final:YES];[self emit:_source.current final:NO];}
     else if([type isEqual:@"session.output_transcript.delta"]&&delta){for(NSString *s in [_target append:delta])[self emitTranslation:s final:YES];[self emitTranslation:_target.current final:NO];}
@@ -317,6 +326,74 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         if(!self->_running)return;self->_running=NO;
         NSURLSessionWebSocketTask *socket=self->_socket;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC),self->_q,^{[socket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];if(self->_socket==socket)self->_socket=nil;});
+        [self status:@"Stopped"];
+    });
+}
+@end
+
+@implementation TIOOpenAICuesASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;NSMutableString *_heard;BOOL _running;}
+- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-cues",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_heard=[NSMutableString new];_resampler=[TIOResampler24k new];}return self;}
+- (NSString *)realtimeModel{return [self.model hasPrefix:@"gpt-realtime"]?self.model:@"gpt-realtime-2.1-mini";}
+- (void)send:(NSDictionary *)event{
+    NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
+    [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){if(error)[self status:[@"OpenAI Cues send failed: " stringByAppendingString:error.localizedDescription]];}];
+}
+- (void)start{
+    dispatch_async(_q,^{
+        NSString *key=self.keyProvider?self.keyProvider():nil;
+        if(!key.length){[self status:@"Set an api.openai.com endpoint and key in Endpoint & API Key first."];return;}
+        NSString *url=[@"wss://api.openai.com/v1/realtime?model=" stringByAppendingString:[self realtimeModel]];
+        NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
+        [r setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
+        self->_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
+        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;
+        NSString *instructions=@"You are Live Cues on smart glasses. You silently listen to a conversation the wearer is part of. "
+            "Reply with a hint only when the last turn contains an explicit, complete question that asks for information or an answer, for example a what, why, how, when, who, which or is/does question. "
+            "The hint is the answer the wearer could give: at most 25 words, plain text, in the language of the question. "
+            "Reply exactly NONE for everything else: statements, opinions, greetings, small talk, rhetorical questions, requests, unfinished sentences, or when you are unsure. "
+            "Never explain terms that were not asked about. Never greet, never ask questions, never describe yourself.";
+        [self send:@{@"type":@"session.update",@"session":@{@"type":@"realtime",@"output_modalities":@[@"text"],@"instructions":instructions,
+            @"audio":@{@"input":@{@"format":@{@"type":@"audio/pcm",@"rate":@24000},@"transcription":@{@"model":@"gpt-4o-transcribe"},@"turn_detection":@{@"type":@"semantic_vad"}}}}}];
+        [self status:@"Connecting · OpenAI Cues"];[self receive];
+    });
+}
+- (void)receive{
+    NSURLSessionWebSocketTask *socket=_socket;__weak typeof(self) weak=self;
+    [socket receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage *message,NSError *error){
+        typeof(self) s=weak;if(!s)return;
+        dispatch_async(s->_q,^{
+            if(socket!=s->_socket)return;
+            if(error){if(s->_running)[s status:[@"OpenAI Cues disconnected: " stringByAppendingString:error.localizedDescription]];s->_running=NO;return;}
+            [s handle:message.string];[s receive];
+        });
+    }];
+}
+- (void)handle:(NSString *)text{
+    id j=text?[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:nil;if(![j isKindOfClass:NSDictionary.class])return;
+    NSString *type=j[@"type"];
+    if([type isEqual:@"session.updated"])[self status:[NSString stringWithFormat:@"Listening · OpenAI Cues (%@, text only)",[self realtimeModel]]];
+    else if([type isEqual:@"conversation.item.input_audio_transcription.delta"]&&[j[@"delta"] isKindOfClass:NSString.class]){[_heard appendString:j[@"delta"]];[self emit:[_heard copy] final:NO];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){[_heard setString:@""];[self emit:[j[@"transcript"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] final:YES];}
+    else if([type isEqual:@"response.output_text.done"]&&[j[@"text"] isKindOfClass:NSString.class]){
+        NSString *hint=[j[@"text"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        // A newline would hide earlier caption text on the glasses.
+        hint=[[hint componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet] componentsJoinedByString:@" "];
+        if(hint.length&&![hint.uppercaseString hasPrefix:@"NONE"])[self emitTranslation:hint final:YES];else [self status:@"no hint for that turn"];
+    }
+    else if([type isEqual:@"error"]){id m=[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;[self status:[@"OpenAI Cues error: " stringByAppendingString:[m isKindOfClass:NSString.class]?m:@"no details"]];}
+}
+- (void)appendPCM16:(NSData *)pcm{
+    dispatch_async(_q,^{
+        if(!self->_running)return;
+        [self->_outgoing appendData:[self->_resampler process:pcm]];
+        if(self->_outgoing.length>=9600){[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+    });
+}
+- (void)stop{
+    dispatch_async(_q,^{
+        if(!self->_running)return;self->_running=NO;
+        [self->_socket cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];self->_socket=nil;
+        [self->_session invalidateAndCancel];self->_session=nil;
         [self status:@"Stopped"];
     });
 }

@@ -6,6 +6,10 @@ FOUNDATION_EXPORT NSString *const TIOLocalASRAppleKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAIKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAILiveKind;
 FOUNDATION_EXPORT NSString *const TIOLocalASROpenAITranslateKind;
+// Live Cues: Realtime model hears the conversation and answers questions as text.
+// onText carries the heard question, onTranslation the hint.
+FOUNDATION_EXPORT NSString *const TIOLocalASROpenAICuesKind;
+FOUNDATION_EXPORT NSDictionary *TIOLocalASRTranslateEvents(void);
 // Splits an append-only text stream into finished sentences and the current tail.
 @interface TIOSentenceStream : NSObject
 - (NSArray<NSString *> *)append:(NSString *)delta;   // sentences completed by this delta

@@ -1,3 +1,4 @@
+#import "LocalASR.h"
 #import "LocalListen.h"
 #import <objc/runtime.h>
 #import <os/lock.h>
@@ -30,7 +31,11 @@ static CFAbsoluteTime DumpStart,DumpUntil;
 
 static NSURL *SampleDirectory(void){
     NSURL *docs=[NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
-    return [docs URLByAppendingPathComponent:@"TurboIOLocalListen" isDirectory:YES];
+    NSURL *dir=[docs URLByAppendingPathComponent:@"TurboIOLocalListen" isDirectory:YES];
+    // Diagnostics and audio samples stay on this phone, out of iCloud and device backups.
+    [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
+    [dir setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:nil];
+    return dir;
 }
 static NSString *Hex(NSData *d,NSUInteger limit){
     NSMutableString *s=[NSMutableString new];const uint8_t *b=d.bytes;
@@ -237,7 +242,7 @@ static void WriteDiagnostics(void){
     if(!Installed)return;
     NSDictionary *hint=TIOLocalListenHint();
     NSDictionary *d=@{@"time":@(NSDate.date.timeIntervalSince1970),@"active":@(Active),@"auto":@([Prefs boolForKey:TIOLocalListenAutoKey]),@"autoStatus":TIOLocalListenAutoStatus(),@"autoLog":TIOLocalListenAutoLog(),@"peak":@(TIOLocalListenAutoPeak()),@"transcriptLength":@(TIOLocalListenTranscript().length),
-        @"trigger":[Prefs stringForKey:TIOLocalListenTriggerKey]?:@"automatic",@"captionRunning":@(CaptionRunning),@"officialCaptionFields":[TIOLocalListenOfficialCaption()[@"fields"] allKeys]?:@[],@"glasses":TIOLocalGlassesDiagnostics(),@"taps":TIOLocalListenTaps(),@"hintCount":hint[@"count"]?:@0,@"hintFields":[hint[@"fields"] allKeys]?:@[],@"inventory":Inventory};
+        @"trigger":[Prefs stringForKey:TIOLocalListenTriggerKey]?:@"automatic",@"captionRunning":@(CaptionRunning),@"officialCaptionFields":[TIOLocalListenOfficialCaption()[@"fields"] allKeys]?:@[],@"glasses":TIOLocalGlassesDiagnostics(),@"cues":TIOLocalCuesDiagnostics(),@"translateEvents":TIOLocalASRTranslateEvents(),@"taps":TIOLocalListenTaps(),@"hintCount":hint[@"count"]?:@0,@"hintFields":[hint[@"fields"] allKeys]?:@[],@"inventory":Inventory};
     NSData *json=[NSJSONSerialization dataWithJSONObject:d options:NSJSONWritingPrettyPrinted error:nil];NSURL *dir=SampleDirectory();
     [NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:YES attributes:nil error:nil];
     [json writeToURL:[dir URLByAppendingPathComponent:@"diagnostics.json"] atomically:YES];

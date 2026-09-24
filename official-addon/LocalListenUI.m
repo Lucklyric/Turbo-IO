@@ -44,7 +44,9 @@
 - (NSString *)targetLanguage{return [self.prefs stringForKey:TIOLocalListenTargetLanguageKey]?:@"en";}
 - (BOOL)showTranscript{return [self.prefs objectForKey:TIOLocalListenTranscriptKey]?[self.prefs boolForKey:TIOLocalListenTranscriptKey]:YES;}
 - (void)toggleTranscript:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenTranscriptKey];if(!sw.on)TIOLocalListenClearTranscript();[self refresh];}
-- (void)pickMode:(UISegmentedControl *)s{[self.prefs setInteger:s.selectedSegmentIndex==1?1:0 forKey:TIOLocalListenModeKey];[self refresh];}
+- (NSInteger)mode{NSInteger m=[self.prefs integerForKey:TIOLocalListenModeKey];return m>=0&&m<=2?m:0;}
+- (void)toggleHints:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenHintsKey];[self refresh];}
+- (void)pickMode:(UISegmentedControl *)s{[self.prefs setInteger:s.selectedSegmentIndex forKey:TIOLocalListenModeKey];[self refresh];}
 - (void)toggleSilence:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenSilenceCloudKey];[self refresh];}
 - (NSString *)openAIModel{return [self.prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";}
 - (void)pickFrom:(NSArray<NSString *> *)titles values:(NSArray<NSString *> *)values key:(NSString *)key title:(NSString *)title{
@@ -80,10 +82,11 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
     return nil;
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s{
-    if([self kind:s]==kCaptions)return 3;if([self kind:s]==kSettings)return 5;if([self kind:s]==kScript)return 1;if([self kind:s]==kTranscript)return [self showTranscript]?3:1;if([self kind:s]==kObserve)return 5;if([self kind:s]==kTaps)return MAX(1,self.taps.count);return 2;
+    if([self kind:s]==kCaptions)return 3;if([self kind:s]==kSettings)return 6;if([self kind:s]==kScript)return 1;if([self kind:s]==kTranscript)return [self showTranscript]?3:1;if([self kind:s]==kObserve)return 5;if([self kind:s]==kTaps)return MAX(1,self.taps.count);return 2;
 }
 - (NSString *)engineTitle{
     NSString *engine=[self engine],*glasses=TIOLocalScriptMode(self.prefs)?nil:TIOLocalGlassesTargetLanguage();
+    if([self mode]==2)return @"OpenAI Realtime · gpt-realtime-2.1-mini, hears the conversation, answers as text (Cues mode)";
     if(TIOLocalScriptMode(self.prefs)&&[engine isEqual:TIOLocalASROpenAITranslateKind])return @"OpenAI Live · streaming (Script mode does not translate)";
     if(glasses)return [NSString stringWithFormat:@"Following glasses CC · OpenAI Translate to %@",glasses];
     if([engine isEqual:TIOLocalASROpenAIKind])return @"OpenAI · cloud, one sentence at a time";
@@ -99,17 +102,18 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
         if(ip.row==0){c.textLabel.text=@"Local Captions";double peak=TIOLocalListenAutoPeak();
             c.detailTextLabel.text=captions?[NSString stringWithFormat:@"On · %@\nInput level: %@",TIOLocalListenAutoStatus(),peak>1?[NSString stringWithFormat:@"%.0f dBFS",20*log10(peak/32768)]:@"silent"]:@"Off";
             Switch(c,captions,self,@selector(toggleAuto:));}
-        if(ip.row==1){c.textLabel.text=@"Show on Glasses";c.detailTextLabel.text=TIOLocalScriptMode(self.prefs)?@"Your script, following your voice":@"What is said, translated when the glasses CC asks for it";
-            UISegmentedControl *mode=[[UISegmentedControl alloc]initWithItems:@[@"Translation",@"Script"]];mode.selectedSegmentIndex=TIOLocalScriptMode(self.prefs)?1:0;[mode addTarget:self action:@selector(pickMode:) forControlEvents:UIControlEventValueChanged];
+        if(ip.row==1){c.textLabel.text=@"Show on Glasses";NSInteger m=[self mode];c.detailTextLabel.text=@[@"What is said, translated when the glasses CC asks for it. Start CC on the glasses.",@"Your script, following your voice. Start CC on the glasses.",@"Hints to questions from your own OpenAI model. Start Live Cues on the glasses; for now the official hints still run too."][m];
+            UISegmentedControl *mode=[[UISegmentedControl alloc]initWithItems:@[@"Translation",@"Script",@"Cues"]];mode.selectedSegmentIndex=m;[mode addTarget:self action:@selector(pickMode:) forControlEvents:UIControlEventValueChanged];
             c.accessoryView=mode;c.selectionStyle=UITableViewCellSelectionStyleNone;Dim(c,captions);mode.enabled=captions;}
-        if(ip.row==2){c.textLabel.text=@"On the Glasses";c.detailTextLabel.text=TIOLocalGlassesStatus();c.selectionStyle=UITableViewCellSelectionStyleNone;Dim(c,captions);}
+        if(ip.row==2){c.textLabel.text=@"On the Glasses";c.detailTextLabel.text=[self mode]==2?TIOLocalCuesStatus():TIOLocalGlassesStatus();c.selectionStyle=UITableViewCellSelectionStyleNone;Dim(c,captions);}
     }else if([self kind:ip.section]==kSettings){
-        BOOL translate=!TIOLocalScriptMode(self.prefs)&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
+        BOOL translate=[self mode]==0&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
         if(ip.row==0){c.textLabel.text=@"Engine";c.detailTextLabel.text=[self engineTitle];}
         if(ip.row==1){if(translate){c.textLabel.text=@"Translate To";NSString *g=TIOLocalGlassesTargetLanguage();c.detailTextLabel.text=g?[g stringByAppendingString:@" · set on the glasses"]:[[self targetLanguage] isEqual:@"zh"]?@"Chinese":@"English";}
             else{c.textLabel.text=@"Spoken Language";c.detailTextLabel.text=[[self language] hasPrefix:@"zh"]?@"Chinese (Mandarin)":@"English";}}
         if(ip.row==2){c.textLabel.text=@"OpenAI Model";c.detailTextLabel.text=[[self openAIModel] stringByAppendingString:@" · OpenAI Per Sentence only"];}
         if(ip.row==3){BOOL on=TIOLocalListenSilenceCloud();c.textLabel.text=@"Silence Cloud Audio";c.detailTextLabel.text=on?@"The official service receives silence. Only OpenAI hears you.":@"The official service receives your real audio.";Switch(c,on,self,@selector(toggleSilence:));}
+        if(ip.row==5){BOOL on=[self.prefs boolForKey:TIOLocalListenHintsKey];c.textLabel.text=@"Hints";c.detailTextLabel.text=[self mode]==2?@"Cues mode always gives hints":on?@"On · a second OpenAI Realtime session hears the same audio and adds Hint: lines to the captions or script":@"Off · no question detection";Switch(c,on,self,@selector(toggleHints:));Dim(c,captions&&[self mode]!=2);return c;}
         if(ip.row==4){NSString *chosen=[self.prefs stringForKey:TIOLocalListenTriggerKey];c.textLabel.text=@"Audio Source";c.detailTextLabel.text=chosen.length?chosen:@"Automatic · glasses CC audio";}
         Dim(c,captions);
     }else if([self kind:ip.section]==kScript){
@@ -169,8 +173,8 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)ip{
     [t deselectRowAtIndexPath:ip animated:YES];
     if([self kind:ip.section]==kSettings){
-        if(ip.row==0&&(TIOLocalScriptMode(self.prefs)||!TIOLocalGlassesTargetLanguage()))[self pickFrom:@[@"Apple · On-Device",@"OpenAI Live · Streaming",@"OpenAI · Per Sentence",@"OpenAI Translate · Streaming"] values:@[TIOLocalASRAppleKind,TIOLocalASROpenAILiveKind,TIOLocalASROpenAIKind,TIOLocalASROpenAITranslateKind] key:TIOLocalListenASRKey title:@"Recognition Engine"];
-        BOOL translate=!TIOLocalScriptMode(self.prefs)&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
+        if(ip.row==0&&[self mode]!=2&&(TIOLocalScriptMode(self.prefs)||!TIOLocalGlassesTargetLanguage()))[self pickFrom:@[@"Apple · On-Device",@"OpenAI Live · Streaming",@"OpenAI · Per Sentence",@"OpenAI Translate · Streaming"] values:@[TIOLocalASRAppleKind,TIOLocalASROpenAILiveKind,TIOLocalASROpenAIKind,TIOLocalASROpenAITranslateKind] key:TIOLocalListenASRKey title:@"Recognition Engine"];
+        BOOL translate=[self mode]==0&&(TIOLocalGlassesTargetLanguage()||[[self engine] isEqual:TIOLocalASROpenAITranslateKind]);
         if(ip.row==1&&translate&&!TIOLocalGlassesTargetLanguage())[self pickFrom:@[@"English",@"Chinese"] values:@[@"en",@"zh"] key:TIOLocalListenTargetLanguageKey title:@"Translate To"];
         else if(ip.row==1&&!translate)[self pickFrom:@[@"Chinese (Mandarin)",@"English"] values:@[@"zh-CN",@"en-US"] key:TIOLocalListenLanguageKey title:@"Spoken Language"];
         if(ip.row==2)[self editModel];
