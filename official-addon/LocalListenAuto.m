@@ -69,10 +69,14 @@ void TIOLocalListenClearTranscript(void){os_unfair_lock_lock(&TextLock);[Lines r
 BOOL TIOLocalListenAutoEnabled(void){return [Prefs boolForKey:TIOLocalListenAutoKey];}
 
 static NSString *Hex(NSData *d){NSMutableString *s=[NSMutableString new];const uint8_t *b=d.bytes;for(NSUInteger i=0;i<MIN(d.length,8);i++)[s appendFormat:@"%02x",b[i]];return s;}
+// Our engines run only inside an official session on the glasses: CC for Translation and
+// Script, Live Cues for Cues. The voice assistant shares the same audio feeds.
+static BOOL SessionOpen(void){return [Prefs integerForKey:TIOLocalListenModeKey]==2?TIOLocalCuesOpen():TIOLocalGlassesSessionOpen();}
 BOOL TIOLocalListenIsAutoTrigger(NSString *key,NSString *chosen){
+    if(!SessionOpen())return NO;
     // Prefix match keeps a trigger chosen before per-track keys working.
     // Cues always listens to the Live Cues recorder audio, whatever caption source is chosen.
-    if([Prefs integerForKey:TIOLocalListenModeKey]==2)return [key hasPrefix:@"RayNeoAudioRecorderAdapter · notifyRecordData"]&&TIOLocalCuesOpen();
+    if([Prefs integerForKey:TIOLocalListenModeKey]==2)return [key hasPrefix:@"RayNeoAudioRecorderAdapter · notifyRecordData"];
     if(chosen.length)return [key hasPrefix:chosen];
     // Automatic choice: recorder audio while RayNeo's caption translation workflow runs,
     // or the Timekettle feed, which only receives audio while captions run.
@@ -97,8 +101,9 @@ static void Start(NSString *key){
     asr.language=[Prefs stringForKey:TIOLocalListenLanguageKey]?:@"zh-CN";asr.model=[Prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";
     asr.keyProvider=^NSString *{return TIOLocalListenOpenAIKey();};
     asr.targetLanguage=glassesTarget?:[Prefs stringForKey:TIOLocalListenTargetLanguageKey]?:@"en";
-    asr.onText=^(NSString *text,BOOL final){if(glassesTarget)return;TIOLocalListenAppendText(text,final);if(cues){if(final)TIOLocalCuesQuestion(text);}else if(script)TIOLocalScriptHeard(text,final);else TIOLocalGlassesSource(text,final);};
-    asr.onTranslation=^(NSString *text,BOOL final){if(final)TIOLocalListenAppendText([@"→ " stringByAppendingString:text],YES);if(cues)TIOLocalCuesHint(text);else TIOLocalGlassesTarget(text,final);};
+    asr.onText=^(NSString *text,BOOL final){if(glassesTarget)return;TIOLocalListenAppendText(text,final);if(script)TIOLocalScriptHeard(text,final);else if(!cues)TIOLocalGlassesSource(text,final);};
+    asr.onTranslation=^(NSString *text,BOOL final){if(final)TIOLocalListenAppendText([@"→ " stringByAppendingString:text],YES);if(!cues)TIOLocalGlassesTarget(text,final);};
+    if(cues)asr.onHint=^(NSString *question,NSString *hint){TIOLocalListenAppendText([@"→ " stringByAppendingString:hint],YES);TIOLocalCuesAnswer(question,hint);};
     TIOLocalGlassesReset();
     if(script)TIOLocalScriptStart([Prefs stringForKey:TIOLocalListenScriptKey]?:@"");
     __weak TIOLocalASR *weak=asr;
@@ -143,6 +148,7 @@ void TIOLocalListenAutoPacket(NSString *key,NSData *packet){
     if(!Q||!packet.length)return;
     dispatch_async(Q,^{
         if(![Prefs boolForKey:TIOLocalListenAutoKey]){Stop(@"Off");return;}
+        if(ASR&&!SessionOpen()){Stop(@"Waiting for Live Captions · the last session ended");return;}
         if(!ASR){if(!TIOLocalListenIsAutoTrigger(key,[Prefs stringForKey:TIOLocalListenTriggerKey]))return;Start(key);}
         if(![key isEqual:Trigger])return;
         LastPacket=CFAbsoluteTimeGetCurrent();Feed(packet);

@@ -15,6 +15,15 @@ FOUNDATION_EXPORT NSDictionary *TIOLocalASRTranslateEvents(void);
 - (NSArray<NSString *> *)append:(NSString *)delta;   // sentences completed by this delta
 @property(nonatomic,readonly) NSString *current;
 @end
+// Live transcript kept per utterance (OpenAI item_id), so overlapping utterances never mix.
+// Finished utterances are released in the order they were heard. Exposed for tests.
+@interface TIOItemTranscript : NSObject
+- (void)commit:(NSString *)item;                                          // utterance order
+- (void)delta:(NSString *)delta item:(NSString *)item;
+- (NSArray<NSString *> *)complete:(NSString *)text item:(NSString *)item; // finals now released
+- (NSArray<NSString *> *)fail:(NSString *)item;
+@property(nonatomic,readonly) NSString *partial;                          // unreleased text, in order
+@end
 // Linear 16 kHz to 24 kHz resampler that keeps state across chunks. Exposed for tests.
 @interface TIOResampler24k : NSObject
 - (NSData *)process:(NSData *)pcm16k;
@@ -36,6 +45,8 @@ FOUNDATION_EXPORT NSData *TIOLocalASRWav(NSData *pcm16k);
 // Translate engine only: ISO-639-1 output language and the translated text stream.
 @property(nonatomic,copy) NSString *targetLanguage;
 @property(nonatomic,copy,nullable) void (^onTranslation)(NSString *text,BOOL final);
+// Cues engine only: a hint with the exact question it answers. Without it, hints go to onTranslation.
+@property(nonatomic,copy,nullable) void (^onHint)(NSString *question,NSString *hint);
 - (void)start;
 - (void)appendPCM16:(NSData *)pcm16k;                         // any thread
 - (void)stop;

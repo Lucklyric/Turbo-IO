@@ -88,6 +88,35 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 @interface TIOOpenAILiveASR : TIOLocalASR @end
 @interface TIOOpenAITranslateASR : TIOLocalASR @end
 @interface TIOOpenAICuesASR : TIOLocalASR @end
+@implementation TIOItemTranscript{NSMutableArray<NSString *> *_order;NSMutableDictionary<NSString *,NSMutableString *> *_text;NSMutableSet<NSString *> *_done,*_closed;NSMutableArray<NSString *> *_closedOrder;}
+- (instancetype)init{if((self=[super init])){_order=[NSMutableArray new];_text=[NSMutableDictionary new];_done=[NSMutableSet new];_closed=[NSMutableSet new];_closedOrder=[NSMutableArray new];}return self;}
+static NSString *Item(NSDictionary *j){return [j[@"item_id"] isKindOfClass:NSString.class]?j[@"item_id"]:@"";}
+static NSString *Trim(NSString *s){return [s stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];}
+- (BOOL)note:(NSString *)item{
+    if([_closed containsObject:item])return NO;
+    if(!_text[item]){[_order addObject:item];_text[item]=[NSMutableString new];}
+    return YES;
+}
+- (void)commit:(NSString *)item{[self note:item?:@""];}
+- (void)delta:(NSString *)delta item:(NSString *)item{item=item?:@"";if([self note:item]&&![_done containsObject:item])[_text[item] appendString:delta];}
+- (NSArray<NSString *> *)complete:(NSString *)text item:(NSString *)item{
+    item=item?:@"";if(![self note:item])return @[];
+    [_text[item] setString:text];[_done addObject:item];return [self releaseFinished];
+}
+- (NSArray<NSString *> *)fail:(NSString *)item{item=item?:@"";if(![self note:item])return @[];[_text[item] setString:@""];[_done addObject:item];return [self releaseFinished];}
+- (NSArray<NSString *> *)releaseFinished{
+    // A first utterance that never finishes holds back at most four later ones.
+    NSMutableArray *out=[NSMutableArray new];
+    while(_order.count&&([_done containsObject:_order[0]]||_order.count>5)){
+        NSString *i=_order[0],*t=Trim(_text[i]);[_order removeObjectAtIndex:0];if(t.length)[out addObject:t];
+        [_text removeObjectForKey:i];[_done removeObject:i];[_closed addObject:i];[_closedOrder addObject:i];
+        if(_closedOrder.count>64){[_closed removeObject:_closedOrder[0]];[_closedOrder removeObjectAtIndex:0];}
+    }
+    return out;
+}
+- (NSString *)partial{NSMutableArray *p=[NSMutableArray new];for(NSString *i in _order){NSString *t=Trim(_text[i]);if(t.length)[p addObject:t];}return [p componentsJoinedByString:@" "];}
+@end
+
 @implementation TIOLocalASR
 + (instancetype)engineOfKind:(NSString *)kind{
     if([kind isEqual:TIOLocalASRAppleKind])return [TIOAppleASR new];
@@ -200,12 +229,19 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 }
 @end
 
-@implementation TIOOpenAILiveASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;NSMutableString *_partial;BOOL _running;TIOSpeechSegmenter *_pauses;}
-- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-live",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_partial=[NSMutableString new];_resampler=[TIOResampler24k new];}return self;}
+@implementation TIOOpenAILiveASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;TIOItemTranscript *_items;NSUInteger _inflight,_dropped;BOOL _running;TIOSpeechSegmenter *_pauses;}
+- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-live",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_resampler=[TIOResampler24k new];}return self;}
 - (NSString *)liveModel{return [self.model containsString:@"live"]||[self.model containsString:@"realtime"]?self.model:@"gpt-live-transcribe";}
 - (void)send:(NSDictionary *)event{
     NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
     [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){if(error)[self status:[@"OpenAI Live send failed: " stringByAppendingString:error.localizedDescription]];}];
+}
+- (void)sendAudio:(NSDictionary *)event{
+    // On _q. When the connection falls behind, skip audio instead of queueing it, so text stays live.
+    if(_inflight>=30){if(!(_dropped++%50))[self status:@"Network is slow, skipping audio to stay live"];return;}
+    _inflight++;NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
+    dispatch_queue_t q=_q;__weak typeof(self) weak=self;
+    [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){dispatch_async(q,^{typeof(self) s=weak;if(s)s->_inflight--;});}];
 }
 - (void)start{
     dispatch_async(_q,^{
@@ -214,7 +250,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"wss://api.openai.com/v1/realtime?intent=transcription"]];
         [r setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
         self->_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
-        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;
+        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;self->_items=[TIOItemTranscript new];self->_inflight=0;
         NSMutableDictionary *transcription=[@{@"model":[self liveModel],@"languages":@[@"zh",@"en"]} mutableCopy];
         if([self.language hasPrefix:@"zh"])transcription[@"prompt"]=@"以下是普通话，请使用简体中文。";
         [self send:@{@"type":@"session.update",@"session":@{@"type":@"transcription",@"audio":@{@"input":@{
@@ -241,8 +277,10 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
     id j=text?[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:nil;if(![j isKindOfClass:NSDictionary.class])return;
     NSString *type=j[@"type"];
     if([type hasSuffix:@"session.updated"])[self status:[NSString stringWithFormat:@"Listening · OpenAI Live %@, streaming",[self liveModel]]];
-    else if([type isEqual:@"conversation.item.input_audio_transcription.delta"]&&[j[@"delta"] isKindOfClass:NSString.class]){[_partial appendString:j[@"delta"]];[self emit:[_partial copy] final:NO];}
-    else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){[_partial setString:@""];[self emit:[j[@"transcript"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] final:YES];}
+    else if([type isEqual:@"input_audio_buffer.committed"])[_items commit:Item(j)];
+    else if([type isEqual:@"conversation.item.input_audio_transcription.delta"]&&[j[@"delta"] isKindOfClass:NSString.class]){[_items delta:j[@"delta"] item:Item(j)];[self emit:_items.partial final:NO];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){for(NSString *f in [_items complete:j[@"transcript"] item:Item(j)])[self emit:f final:YES];[self emit:_items.partial final:NO];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.failed"]){for(NSString *f in [_items fail:Item(j)])[self emit:f final:YES];[self emit:_items.partial final:NO];}
     else if([type isEqual:@"error"]){id m=[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;[self status:[@"OpenAI Live error: " stringByAppendingString:[m isKindOfClass:NSString.class]?m:@"no details"]];}
 }
 - (void)commit{
@@ -255,7 +293,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         if(!self->_running)return;
         [self->_outgoing appendData:[self->_resampler process:pcm]];[self->_pauses append:pcm];
         // Send about 100 ms of 24 kHz audio per event.
-        if(self->_outgoing.length>=4800){[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+        if(self->_outgoing.length>=4800){[self sendAudio:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
     });
 }
 - (void)stop{
@@ -275,11 +313,18 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 
 // One WebSocket returns both the source transcript and the translation while the
 // speaker is still talking. Translated audio is ignored.
-@implementation TIOOpenAITranslateASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;TIOSentenceStream *_source,*_target;BOOL _running;}
+@implementation TIOOpenAITranslateASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;TIOSentenceStream *_source,*_target;NSUInteger _inflight,_dropped;BOOL _running;}
 - (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-translate",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_resampler=[TIOResampler24k new];_source=[TIOSentenceStream new];_target=[TIOSentenceStream new];}return self;}
 - (void)send:(NSDictionary *)event{
     NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
     [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){if(error)[self status:[@"OpenAI Translate send failed: " stringByAppendingString:error.localizedDescription]];}];
+}
+- (void)sendAudio:(NSDictionary *)event{
+    // On _q. When the connection falls behind, skip audio instead of queueing it, so text stays live.
+    if(_inflight>=30){if(!(_dropped++%50))[self status:@"Network is slow, skipping audio to stay live"];return;}
+    _inflight++;NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
+    dispatch_queue_t q=_q;__weak typeof(self) weak=self;
+    [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){dispatch_async(q,^{typeof(self) s=weak;if(s)s->_inflight--;});}];
 }
 - (void)start{
     dispatch_async(_q,^{
@@ -288,7 +333,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate"]];
         [r setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
         self->_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
-        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;
+        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;self->_inflight=0;
         [self send:@{@"type":@"session.update",@"session":@{@"audio":@{@"input":@{@"transcription":@{@"model":@"gpt-realtime-whisper"}},@"output":@{@"language":self.targetLanguage?:@"en"}}}}];
         [self status:@"Connecting · OpenAI Translate"];[self receive];
     });
@@ -318,7 +363,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         if(!self->_running)return;
         [self->_outgoing appendData:[self->_resampler process:pcm]];
         // 200 ms of 24 kHz PCM16 per event, as the translation guide recommends.
-        if(self->_outgoing.length>=9600){[self send:@{@"type":@"session.input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+        if(self->_outgoing.length>=9600){[self sendAudio:@{@"type":@"session.input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
     });
 }
 - (void)stop{
@@ -331,12 +376,29 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
 }
 @end
 
-@implementation TIOOpenAICuesASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;NSMutableString *_heard;BOOL _running;}
-- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-cues",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_heard=[NSMutableString new];_resampler=[TIOResampler24k new];}return self;}
+@implementation TIOOpenAICuesASR{dispatch_queue_t _q;NSURLSession *_session;NSURLSessionWebSocketTask *_socket;TIOResampler24k *_resampler;NSMutableData *_outgoing;TIOItemTranscript *_items;NSMutableDictionary<NSString *,NSString *> *_asked,*_parent,*_waiting;NSString *_lastAsked;NSUInteger _inflight,_dropped;BOOL _running;}
+- (instancetype)init{if((self=[super init])){_q=dispatch_queue_create("io.turboio.asr.openai-cues",DISPATCH_QUEUE_SERIAL);_outgoing=[NSMutableData new];_resampler=[TIOResampler24k new];}return self;}
 - (NSString *)realtimeModel{return [self.model hasPrefix:@"gpt-realtime"]?self.model:@"gpt-realtime-2.1-mini";}
 - (void)send:(NSDictionary *)event{
     NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
     [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){if(error)[self status:[@"OpenAI Cues send failed: " stringByAppendingString:error.localizedDescription]];}];
+}
+- (void)sendAudio:(NSDictionary *)event{
+    // On _q. When the connection falls behind, skip audio instead of queueing it, so text stays live.
+    if(_inflight>=30){if(!(_dropped++%50))[self status:@"Network is slow, skipping audio to stay live"];return;}
+    _inflight++;NSString *text=[[NSString alloc]initWithData:[NSJSONSerialization dataWithJSONObject:event options:0 error:nil] encoding:NSUTF8StringEncoding];
+    dispatch_queue_t q=_q;__weak typeof(self) weak=self;
+    [_socket sendMessage:[[NSURLSessionWebSocketMessage alloc]initWithString:text] completionHandler:^(NSError *error){dispatch_async(q,^{typeof(self) s=weak;if(s)s->_inflight--;});}];
+}
+// A hint answers the user turn its reply follows (previous_item_id). Its transcript can land
+// after the hint, so the hint waits up to 3 s for it.
+- (void)hint:(NSString *)hint question:(NSString *)question{
+    void (^b)(NSString *,NSString *)=self.onHint;
+    if(b)dispatch_async(dispatch_get_main_queue(),^{b(question?:@"",hint);});else [self emitTranslation:hint final:YES];
+}
+- (void)asked:(NSString *)text item:(NSString *)item{
+    _lastAsked=text;if(!item.length)return;_asked[item]=text;if(_asked.count>32)[_asked removeAllObjects];
+    NSString *h=_waiting[item];if(h){[_waiting removeObjectForKey:item];[self hint:h question:text];}
 }
 - (void)start{
     dispatch_async(_q,^{
@@ -346,7 +408,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
         NSMutableURLRequest *r=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:url]];
         [r setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
         self->_session=[NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.ephemeralSessionConfiguration];
-        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;
+        self->_socket=[self->_session webSocketTaskWithRequest:r];[self->_socket resume];self->_running=YES;self->_inflight=0;self->_items=[TIOItemTranscript new];self->_asked=[NSMutableDictionary new];self->_parent=[NSMutableDictionary new];self->_waiting=[NSMutableDictionary new];self->_lastAsked=nil;
         NSString *instructions=@"You are Live Cues on smart glasses. You silently listen to a conversation the wearer is part of. "
             "Reply with a hint only when the last turn contains an explicit, complete question that asks for information or an answer, for example a what, why, how, when, who, which or is/does question. "
             "The hint is the answer the wearer could give: at most 25 words, plain text, in the language of the question. "
@@ -372,13 +434,25 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
     id j=text?[NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]:nil;if(![j isKindOfClass:NSDictionary.class])return;
     NSString *type=j[@"type"];
     if([type isEqual:@"session.updated"])[self status:[NSString stringWithFormat:@"Listening · OpenAI Cues (%@, text only)",[self realtimeModel]]];
-    else if([type isEqual:@"conversation.item.input_audio_transcription.delta"]&&[j[@"delta"] isKindOfClass:NSString.class]){[_heard appendString:j[@"delta"]];[self emit:[_heard copy] final:NO];}
-    else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){[_heard setString:@""];[self emit:[j[@"transcript"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] final:YES];}
+    else if([type isEqual:@"input_audio_buffer.committed"])[_items commit:Item(j)];
+    else if(([type isEqual:@"conversation.item.added"]||[type isEqual:@"conversation.item.created"])&&[j[@"item"] isKindOfClass:NSDictionary.class]&&[j[@"item"][@"role"] isEqual:@"assistant"]&&[j[@"item"][@"id"] isKindOfClass:NSString.class]&&[j[@"previous_item_id"] isKindOfClass:NSString.class]){
+        _parent[j[@"item"][@"id"]]=j[@"previous_item_id"];if(_parent.count>32)[_parent removeAllObjects];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.delta"]&&[j[@"delta"] isKindOfClass:NSString.class]){[_items delta:j[@"delta"] item:Item(j)];[self emit:_items.partial final:NO];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.completed"]&&[j[@"transcript"] isKindOfClass:NSString.class]){
+        NSString *q=[j[@"transcript"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        for(NSString *f in [_items complete:j[@"transcript"] item:Item(j)])[self emit:f final:YES];[self emit:_items.partial final:NO];
+        [self asked:q item:Item(j)];}
+    else if([type isEqual:@"conversation.item.input_audio_transcription.failed"]){for(NSString *f in [_items fail:Item(j)])[self emit:f final:YES];[self emit:_items.partial final:NO];}
     else if([type isEqual:@"response.output_text.done"]&&[j[@"text"] isKindOfClass:NSString.class]){
         NSString *hint=[j[@"text"] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         // A newline would hide earlier caption text on the glasses.
         hint=[[hint componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet] componentsJoinedByString:@" "];
-        if(hint.length&&![hint.uppercaseString hasPrefix:@"NONE"])[self emitTranslation:hint final:YES];else [self status:@"no hint for that turn"];
+        if(!hint.length||[hint.uppercaseString hasPrefix:@"NONE"]){[self status:@"no hint for that turn"];return;}
+        NSString *user=_parent[Item(j)];
+        if(!user.length)[self hint:hint question:_lastAsked];
+        else if(_asked[user])[self hint:hint question:_asked[user]];
+        else{_waiting[user]=hint;__weak typeof(self) weak=self;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),_q,^{typeof(self) s=weak;if(!s)return;NSString *h=s->_waiting[user];if(!h)return;[s->_waiting removeObjectForKey:user];[s hint:h question:s->_lastAsked];});}
     }
     else if([type isEqual:@"error"]){id m=[j[@"error"] isKindOfClass:NSDictionary.class]?j[@"error"][@"message"]:nil;[self status:[@"OpenAI Cues error: " stringByAppendingString:[m isKindOfClass:NSString.class]?m:@"no details"]];}
 }
@@ -386,7 +460,7 @@ static double RMS(const int16_t *s,NSUInteger n){double sum=0;for(NSUInteger i=0
     dispatch_async(_q,^{
         if(!self->_running)return;
         [self->_outgoing appendData:[self->_resampler process:pcm]];
-        if(self->_outgoing.length>=9600){[self send:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
+        if(self->_outgoing.length>=9600){[self sendAudio:@{@"type":@"input_audio_buffer.append",@"audio":[self->_outgoing base64EncodedStringWithOptions:0]}];[self->_outgoing setLength:0];}
     });
 }
 - (void)stop{

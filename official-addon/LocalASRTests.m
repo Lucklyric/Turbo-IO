@@ -28,4 +28,13 @@ int main(void){@autoreleasepool{
     for(NSString *d in @[@"今天天",@"气很好。明",@"天见！Pi is 3.",@"14. Next"])[got addObjectsFromArray:[ss append:d]];
     assert(got.count==3&&[got[0] isEqual:@"今天天气很好。"]&&[got[1] isEqual:@"明天见！"]&&[got[2] isEqual:@"Pi is 3.14."]);assert([ss.current isEqual:@"Next"]);
     NSLog(@"PASS: local ASR WAV header, speech segmenter, 24 kHz resampler and sentence stream");
+    // Per-utterance transcript: overlapping utterances never mix, finals keep spoken order.
+    TIOItemTranscript *it=[TIOItemTranscript new];[it commit:@"a"];[it commit:@"b"];
+    [it delta:@"Hello " item:@"a"];[it delta:@"How are" item:@"b"];[it delta:@"there." item:@"a"];
+    assert([it.partial isEqual:@"Hello there. How are"]);
+    NSArray *f=[it complete:@"How are you?" item:@"b"];assert(f.count==0);      // b waits for a
+    f=[it complete:@"Hello there." item:@"a"];assert(f.count==2&&[f[0] isEqual:@"Hello there."]&&[f[1] isEqual:@"How are you?"]);
+    assert(it.partial.length==0);[it delta:@"late" item:@"a"];assert(it.partial.length==0); // closed items ignore late deltas
+    [it commit:@"c"];[it delta:@"noise" item:@"c"];assert([it fail:@"c"].count==0&&it.partial.length==0);
+    NSLog(@"PASS: per-utterance live transcript");
 }return 0;}

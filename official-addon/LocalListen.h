@@ -69,9 +69,9 @@ FOUNDATION_EXPORT void TIOLocalScriptHint(NSString *hint);
 // Live Cues mode (LocalCues.m): TIOLocalListenModeKey 2.
 FOUNDATION_EXPORT void TIOLocalCuesObserveCall(id plugin,NSString *method,id _Nullable args);
 FOUNDATION_EXPORT void TIOLocalCuesObserveEvent(NSDictionary *event);
-FOUNDATION_EXPORT void TIOLocalCuesQuestion(NSString *text);
-FOUNDATION_EXPORT void TIOLocalCuesHint(NSString *hint);
+FOUNDATION_EXPORT void TIOLocalCuesAnswer(NSString *question,NSString *hint);
 FOUNDATION_EXPORT BOOL TIOLocalCuesOpen(void);
+FOUNDATION_EXPORT BOOL TIOLocalGlassesSessionOpen(void);
 FOUNDATION_EXPORT NSString *TIOLocalCuesStatus(void);
 FOUNDATION_EXPORT NSDictionary *TIOLocalCuesDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);

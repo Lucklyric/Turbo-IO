@@ -7,11 +7,10 @@
 // The official app sends its hints as business 0x17 type 5, mode 4, with the question
 // in source_transcript and the hint in target_translation (from its own native log).
 // The session ID is the taskId Flutter passes when it starts Live Cues. Main thread only.
-static NSString *TaskID,*Question,*PendingHint,*State=@"Waiting for Live Cues on the glasses";
+static NSString *TaskID,*State=@"Waiting for Live Cues on the glasses";
 static NSUInteger Sent,Answered,Starts;
 static NSString *LastResult;
 static BOOL Sending,Marked;
-static NSTimeInterval QuestionAt;
 // Read from the audio thread to decide whether the Cues engine may start.
 static _Atomic bool Open;
 BOOL TIOLocalCuesOpen(void){return Open;}
@@ -37,7 +36,7 @@ void TIOLocalCuesObserveEvent(NSDictionary *event){
     NSDictionary *e=TIOSubtitleEnvelope(d),*j=e[@"json"];NSString *sid=j[@"sid"];
     if(![sid isKindOfClass:NSString.class]||!sid.length)return;
     if([e[@"type"] isEqual:@3]){if([sid isEqual:TaskID]){SetTask(nil);State=@"Live Cues ended on the glasses";}return;}
-    if([e[@"type"] isEqual:@1]&&![sid isEqual:TaskID]){Starts++;SetTask(sid);Question=nil;PendingHint=nil;QuestionAt=0;Marked=NO;State=@"Live Cues session from the glasses, our hints go to it";}
+    if([e[@"type"] isEqual:@1]&&![sid isEqual:TaskID]){Starts++;SetTask(sid);Marked=NO;State=@"Live Cues session from the glasses, our hints go to it";}
 }
 static BOOL SendJSON(NSDictionary *j){
     id plugin=TIOProtocolPlugin();NSDictionary *route=TIOProtocolRoute(23);
@@ -57,19 +56,8 @@ static void Send(NSString *question,NSString *hint){
     NSString *q=question?:@"",*h=hint;if(!Marked){q=[ResearchMark stringByAppendingString:q];Marked=YES;}
     SendJSON(@{@"sid":TaskID?:@"",@"mode":@4,@"status":@1,@"content":@{@"source_transcript":q,@"target_translation":h,@"label":@0,@"keyword_info":NSNull.null}});
 }
-// A hint belongs to the latest question heard within the last 2 s. The question's transcript
-// can land just after its hint, so a hint without a fresh question waits up to 1 s for one.
-static NSTimeInterval Now(void){return NSProcessInfo.processInfo.systemUptime;}
-void TIOLocalCuesQuestion(NSString *text){
-    if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{TIOLocalCuesQuestion(text);});return;}
-    Question=[text copy];QuestionAt=Now();
-    if(PendingHint){NSString *h=PendingHint;PendingHint=nil;QuestionAt=0;Send(Question,h);}
-}
-void TIOLocalCuesHint(NSString *hint){
-    if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{TIOLocalCuesHint(hint);});return;}
-    if(QuestionAt&&Now()-QuestionAt<2){QuestionAt=0;Send(Question,hint);return;}
-    if(PendingHint)Send(nil,PendingHint);
-    PendingHint=[hint copy];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{
-        if(![PendingHint isEqual:hint])return;PendingHint=nil;Send(Question,hint);});
+// The engine pairs each hint with the question it answers.
+void TIOLocalCuesAnswer(NSString *question,NSString *hint){
+    if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{TIOLocalCuesAnswer(question,hint);});return;}
+    Send(question,hint);
 }

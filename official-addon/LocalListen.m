@@ -221,8 +221,10 @@ static BOOL HookAgora(NSMutableString *inv){
                 os_unfair_lock_lock(&Lock);Taps[key][@"source"]=[NSString stringWithFormat:@"%ld Hz, %ld ch, %ld frames per call, ts %.0f ms",(long)rate,(long)channels,(long)(samples/channels),ts*1000];os_unfair_lock_unlock(&Lock);}}@catch(NSException *e){}
         }
         // Keep the official stream's timing but send zeros, so no speech leaves for the official cloud.
+        // Only during a CC session: the voice assistant uses this same stream, and silence
+        // there makes its recognizer return "you".
         NSMutableData *silence=nil;
-        if(Active&&data&&samples>0&&samples<=96000&&TIOLocalListenAutoEnabled()&&TIOLocalListenSilenceCloud()){silence=[NSMutableData dataWithLength:(NSUInteger)samples*2];data=silence.mutableBytes;}
+        if(Active&&data&&samples>0&&samples<=96000&&TIOLocalListenAutoEnabled()&&TIOLocalListenSilenceCloud()&&TIOLocalGlassesSessionOpen()){silence=[NSMutableData dataWithLength:(NSUInteger)samples*2];data=silence.mutableBytes;}
         return ((int(*)(id,SEL,void *,NSInteger,NSInteger,NSInteger,NSInteger,NSTimeInterval))original)(obj,sel,data,samples,rate,channels,track,ts);
     }));
     [inv appendFormat:@"\nAgoraRtcEngineKit\n  -%@ %s  [observed]\n",NSStringFromSelector(sel),method_getTypeEncoding(m)];

@@ -17,6 +17,9 @@ static NSTimeInterval PendingSince;
 static NSUInteger Sent,Answered;
 static NSString *LastResult;
 static NSDictionary *StartJSON;
+// Read from the audio thread: official audio is silenced only while a CC session is open.
+static _Atomic bool Open;
+BOOL TIOLocalGlassesSessionOpen(void){return Open;}
 static NSTimeInterval Now(void){return NSProcessInfo.processInfo.systemUptime;}
 static id Get(id o,NSString *k){@try{return [o valueForKey:k];}@catch(NSException *e){return nil;}}
 static NSData *Bytes(id o){if([o isKindOfClass:NSData.class])return o;id b=Get(o,@"data");return [b isKindOfClass:NSData.class]?b:nil;}
@@ -35,13 +38,13 @@ void TIOLocalGlassesObserveEvent(NSDictionary *event){
     if(![m isKindOfClass:NSDictionary.class]||![m[@"businessId"] isEqual:@19]||![m[@"deviceId"] isKindOfClass:NSString.class])return;
     NSDictionary *e=TIOSubtitleEnvelope(Bytes(m[@"payload"])),*j=e[@"json"];NSString *sid=j[@"sid"];
     if(![sid isKindOfClass:NSString.class]||!sid.length)return;
-    if([e[@"type"] isEqual:@3]){if([sid isEqual:SID]){SID=nil;State=@"Live Captions ended on the glasses";}return;}
+    if([e[@"type"] isEqual:@3]){if([sid isEqual:SID]){SID=nil;Open=false;State=@"Live Captions ended on the glasses";}return;}
     if(![e[@"type"] isEqual:@1]&&![e[@"type"] isEqual:@4])return;
     if([e[@"type"] isEqual:@1]){StartJSON=j;RememberSettings(j[@"settings"]);}
     if([sid isEqual:SID]&&Route)return;
     id plugin=TIOProtocolPlugin();
     if(!plugin){State=@"Glasses session seen, but no official plugin captured yet";return;}
-    Plugin=plugin;Route=@{@"deviceId":m[@"deviceId"],@"businessId":@19};SID=sid;Source=Target=nil;[Outbox removeAllObjects];[RoundSource setString:@""];[RoundTarget setString:@""];RoundSentences=0;Marked=NO;Pending=NO;
+    Plugin=plugin;Route=@{@"deviceId":m[@"deviceId"],@"businessId":@19};SID=sid;Open=true;Source=Target=nil;[Outbox removeAllObjects];[RoundSource setString:@""];[RoundTarget setString:@""];RoundSentences=0;Marked=NO;Pending=NO;
     State=@"Live Captions session from the glasses, local captions go to it";
 }
 
@@ -54,8 +57,8 @@ void TIOLocalGlassesObserveCall(id plugin,NSString *method,NSDictionary *args){
     if([e[@"type"] isEqual:@2]&&[j[@"final_settings"] isKindOfClass:NSDictionary.class]){RememberSettings(j[@"final_settings"]);return;}
     if([e[@"type"] isEqual:@1]||([e[@"type"] isEqual:@7]&&[j[@"config"] isKindOfClass:NSDictionary.class]&&[j[@"config"][@"is_display"] isEqual:@YES])){
         NSMutableDictionary *r=[args mutableCopy];[r removeObjectForKey:@"payload"];
-        Plugin=plugin;Route=r;SID=sid;Source=Target=nil;[Outbox removeAllObjects];[RoundSource setString:@""];[RoundTarget setString:@""];RoundSentences=0;Marked=NO;Pending=NO;State=@"Live Captions session open, local captions go to the glasses";
-    }else if([sid isEqual:SID]&&[e[@"type"] isEqual:@3]){SID=nil;State=@"Live Captions session ended";}
+        Plugin=plugin;Route=r;SID=sid;Open=true;Source=Target=nil;[Outbox removeAllObjects];[RoundSource setString:@""];[RoundTarget setString:@""];RoundSentences=0;Marked=NO;Pending=NO;State=@"Live Captions session open, local captions go to the glasses";
+    }else if([sid isEqual:SID]&&[e[@"type"] isEqual:@3]){SID=nil;Open=false;State=@"Live Captions session ended";}
 }
 static void Flush(void);
 // Outgoing messages. A newer partial replaces a queued partial; finished sentences are never dropped.
