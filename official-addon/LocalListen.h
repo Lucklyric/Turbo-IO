@@ -72,6 +72,14 @@ FOUNDATION_EXPORT void TIOLocalCuesObserveEvent(NSDictionary *event);
 FOUNDATION_EXPORT void TIOLocalCuesAnswer(NSString *question,NSString *hint);
 FOUNDATION_EXPORT BOOL TIOLocalCuesOpen(void);
 FOUNDATION_EXPORT BOOL TIOLocalGlassesSessionOpen(void);
+// Official teleprompter observation (pass-through): recognizer text, audio feed, business 20.
+FOUNDATION_EXPORT void TIOTeleObserveInstall(void);
+FOUNDATION_EXPORT void TIOTeleObserveCall(NSString *method,NSDictionary *args);
+FOUNDATION_EXPORT void TIOTeleObserveEvent(NSDictionary *event);
+// Official teleprompter rescue: follows the reader when the official voice tracking is lost.
+FOUNDATION_EXPORT void TIOTeleFollowHeard(NSString *text,BOOL final);
+FOUNDATION_EXPORT void TIOTeleFollowObserveCall(NSString *method,NSDictionary *args);
+FOUNDATION_EXPORT NSDictionary *TIOTeleFollowDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalCuesStatus(void);
 FOUNDATION_EXPORT NSDictionary *TIOLocalCuesDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);

@@ -437,6 +437,7 @@ __attribute__((constructor)) static void Load(void) {
             VoiceExitReady=valid&&Signature(object_getClass(helper),@"shared",2,"@",@[])&&Signature(helper,@"stopWorkflow",2,"v",@[])&&Signature(voice,@"onAudioRecordStart",2,"v",@[]);
             if(VoiceExitReady)OriginalAudioStart=(void *)method_setImplementation(class_getInstanceMethod(voice,NSSelectorFromString(@"onAudioRecordStart")),(IMP)AudioStartHook);
             if(valid)TIOInstallTodoRuntime();
+            TIOTeleObserveInstall();
             // Observation hooks install only when the user turned them on.
             if(VersionMatches())TIOLocalListenConfigure(Prefs);
             TIOLocalListenSetKeyProvider(^NSString *{NSString *endpoint=[Prefs stringForKey:@"endpoint"]?:@"";NSURL *url=TIOValidateEndpoint(endpoint);return url&&TIOIsOpenAI(url)?ReadKey(endpoint):nil;});
