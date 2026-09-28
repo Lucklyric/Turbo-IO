@@ -115,12 +115,15 @@ static NSUInteger TokenAt(const TIOToken *t,NSUInteger n,NSUInteger byte){NSUInt
 // is matched: updates that arrive while a match runs are merged into one follow-up run, and a
 // result is dropped if the official matcher has caught up in the meantime.
 static dispatch_queue_t Q;
+static NSUserDefaults *Settings(void){static NSUserDefaults *d;static dispatch_once_t once;dispatch_once(&once,^{d=[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"];});return d;}
+BOOL TIOTeleFollowEnabled(void){return [Settings() objectForKey:@"teleprompterRescue"]?[Settings() boolForKey:@"teleprompterRescue"]:YES;}
+void TIOTeleFollowSetEnabled(BOOL on){[Settings() setBool:on forKey:@"teleprompterRescue"];}
 static BOOL Busy,Again;
 static NSTimeInterval BusyAt;
 static void Follow(void){
     NSTimeInterval now=Now();
     // The official matcher is keeping up: leave it alone.
-    if(!Voice||!Tokens.length||![ScriptDid isEqual:Did]||now-OfficialAt<1.2||now-SentAt<0.25)return;
+    if(!Voice||!TIOTeleFollowEnabled()||!Tokens.length||![ScriptDid isEqual:Did]||now-OfficialAt<1.2||now-SentAt<0.25)return;
     // A match that has not come back in 2 s is given up, so following never stalls.
     if(Busy&&now-BusyAt<2){Again=YES;return;}
     NSMutableArray *window=[Heard mutableCopy];if(Partial.length)[window addObject:Partial];

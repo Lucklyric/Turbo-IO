@@ -80,6 +80,9 @@ FOUNDATION_EXPORT void TIOTeleObserveEvent(NSDictionary *event);
 FOUNDATION_EXPORT void TIOTeleFollowHeard(NSString *text,BOOL final);
 FOUNDATION_EXPORT void TIOTeleFollowObserveCall(NSString *method,NSDictionary *args);
 FOUNDATION_EXPORT NSDictionary *TIOTeleFollowDiagnostics(void);
+// Rescue switch in Research, Glasses Captions. On by default; off leaves the official matcher alone.
+FOUNDATION_EXPORT BOOL TIOTeleFollowEnabled(void);
+FOUNDATION_EXPORT void TIOTeleFollowSetEnabled(BOOL on);
 FOUNDATION_EXPORT NSString *TIOLocalCuesStatus(void);
 FOUNDATION_EXPORT NSDictionary *TIOLocalCuesDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);

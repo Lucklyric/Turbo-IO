@@ -6,7 +6,7 @@ NSArray<NSDictionary *> *TIOResearchSections(NSString *page){
         @{@"title":@"Answer Mode",@"rows":@[Row(@"mode",@"Current Answer Mode",@"square.stack.3d.up",0,0)]},
         @{@"title":@"Own Model",@"rows":@[Row(@"api",@"Endpoint & API Key",@"cube",0,1),Row(@"thinking",@"Disable Deep Thinking",@"bolt",0,3),Row(@"effort",@"Reasoning Effort · OpenAI",@"gauge.medium",-6,0)]},
         @{@"title":@"Tools",@"rows":@[Row(@"tools",@"Model Tools",@"wrench.and.screwdriver",0,11)]},
-        @{@"title":@"Glasses Captions",@"rows":@[Row(@"captions",@"Local Captions & Script",@"captions.bubble",-8,0)]},
+        @{@"title":@"Glasses Captions",@"rows":@[Row(@"captions",@"Local Captions & Script",@"captions.bubble",-8,0),Row(@"teleRescue",@"Teleprompter Rescue",@"text.viewfinder",-9,0)]},
         @{@"title":@"Voice & Context",@"rows":@[Row(@"exit",@"Voice Exit",@"waveform",0,6),Row(@"prompt",@"Profile & Prompt",@"text.bubble",0,5),Row(@"history",@"Current Chat Context",@"clock.arrow.circlepath",0,4)]}];
     if([page isEqual:@"library"])return @[
         @{@"title":@"Maps & Glasses Navigation",@"rows":@[Row(@"navigation",@"Walking / Cycling / Driving Navigation",@"map",-3,0)]},
