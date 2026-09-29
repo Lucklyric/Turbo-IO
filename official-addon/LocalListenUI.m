@@ -47,6 +47,7 @@
 - (NSInteger)mode{NSInteger m=[self.prefs integerForKey:TIOLocalListenModeKey];return m>=0&&m<=2?m:0;}
 - (void)toggleHints:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenHintsKey];[self refresh];}
 - (void)pickMode:(UISegmentedControl *)s{[self.prefs setInteger:s.selectedSegmentIndex forKey:TIOLocalListenModeKey];[self refresh];}
+- (void)toggleKeepAlive:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenKeepAliveKey];[self refresh];}
 - (void)toggleSilence:(UISwitch *)sw{[self.prefs setBool:sw.on forKey:TIOLocalListenSilenceCloudKey];[self refresh];}
 - (NSString *)openAIModel{return [self.prefs stringForKey:TIOLocalListenOpenAIModelKey]?:@"gpt-transcribe";}
 - (void)pickFrom:(NSArray<NSString *> *)titles values:(NSArray<NSString *> *)values key:(NSString *)key title:(NSString *)title{
@@ -82,7 +83,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
     return nil;
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s{
-    if([self kind:s]==kCaptions)return 3;if([self kind:s]==kSettings)return 6;if([self kind:s]==kScript)return 1;if([self kind:s]==kTranscript)return [self showTranscript]?3:1;if([self kind:s]==kObserve)return 5;if([self kind:s]==kTaps)return MAX(1,self.taps.count);return 2;
+    if([self kind:s]==kCaptions)return 3;if([self kind:s]==kSettings)return 7;if([self kind:s]==kScript)return 1;if([self kind:s]==kTranscript)return [self showTranscript]?3:1;if([self kind:s]==kObserve)return 5;if([self kind:s]==kTaps)return MAX(1,self.taps.count);return 2;
 }
 - (NSString *)engineTitle{
     NSString *engine=[self engine],*glasses=TIOLocalScriptMode(self.prefs)?nil:TIOLocalGlassesTargetLanguage();
@@ -114,6 +115,7 @@ static UISwitch *Switch(UITableViewCell *c,BOOL on,id target,SEL action){UISwitc
         if(ip.row==2){c.textLabel.text=@"OpenAI Model";c.detailTextLabel.text=[[self openAIModel] stringByAppendingString:@" · OpenAI Per Sentence only"];}
         if(ip.row==3){BOOL on=TIOLocalListenSilenceCloud();c.textLabel.text=@"Silence Cloud Audio";c.detailTextLabel.text=on?@"The official service receives silence. Only OpenAI hears you.":@"The official service receives your real audio.";Switch(c,on,self,@selector(toggleSilence:));}
         if(ip.row==5){BOOL on=[self.prefs boolForKey:TIOLocalListenHintsKey];c.textLabel.text=@"Hints";c.detailTextLabel.text=[self mode]==2?@"Cues mode always gives hints":on?@"On · a second OpenAI Realtime session hears the same audio and adds Hint: lines to the captions or script":@"Off · no question detection";Switch(c,on,self,@selector(toggleHints:));Dim(c,captions&&[self mode]!=2);return c;}
+        if(ip.row==6){BOOL on=TIOLocalListenKeepAlive(),silent=TIOLocalListenSilenceCloud();c.textLabel.text=@"Keep Session Alive";c.detailTextLabel.text=!silent?@"Only needed while the cloud audio is silenced":on?@"On · the official service hears a short spoken \"Okay.\" every 5 minutes, so it does not end CC after 30 minutes of silence. Your captions are not affected.":@"Off · with silenced audio, the official service ends CC after about 30 minutes";Switch(c,on,self,@selector(toggleKeepAlive:));Dim(c,captions&&silent);return c;}
         if(ip.row==4){NSString *chosen=[self.prefs stringForKey:TIOLocalListenTriggerKey];c.textLabel.text=@"Audio Source";c.detailTextLabel.text=chosen.length?chosen:@"Automatic · glasses CC audio";}
         Dim(c,captions);
     }else if([self kind:ip.section]==kScript){

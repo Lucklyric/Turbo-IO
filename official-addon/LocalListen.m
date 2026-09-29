@@ -153,6 +153,29 @@ BOOL TIOLocalListenCaptionRunning(void){return CaptionRunning;}
 NSString *const TIOLocalListenAgoraKey=@"AgoraRtcEngineKit · pushExternalAudioFrameRawData";
 NSString *const TIOLocalListenSilenceCloudKey=@"localListenSilenceCloud";
 NSString *const TIOLocalListenTargetLanguageKey=@"localListenTargetLanguage";
+NSString *const TIOLocalListenKeepAliveKey=@"localListenKeepAlive";
+BOOL TIOLocalListenKeepAlive(void){return [Prefs objectForKey:TIOLocalListenKeepAliveKey]?[Prefs boolForKey:TIOLocalListenKeepAliveKey]:YES;}
+// The caption provider ends a session after 30 minutes of pure silence ("server audio user
+// offline"). While the cloud is silenced, a short spoken "Okay." replaces the silence every
+// 5 minutes on one track. Only the official stream gets it; our engines hear the real audio.
+#include "KeepAliveClip.h"
+static const double KeepAliveEvery=300;
+static os_unfair_lock KeepLock=OS_UNFAIR_LOCK_INIT;
+static double KeepNext,KeepLast,KeepPos=-1;
+static NSInteger KeepTrack;
+static void KeepAlive(int16_t *out,NSInteger frames,NSInteger rate,NSInteger channels,NSInteger track){
+    double now=NSProcessInfo.processInfo.systemUptime;const double len=sizeof TIOKeepAliveClip/sizeof TIOKeepAliveClip[0];
+    os_unfair_lock_lock(&KeepLock);
+    // A new silenced stretch (nothing for 5 s) starts the clock again.
+    if(now-KeepLast>5){KeepNext=now+KeepAliveEvery;KeepPos=-1;}KeepLast=now;
+    if(KeepPos<0&&now>=KeepNext){KeepPos=0;KeepTrack=track;KeepNext=now+KeepAliveEvery;}
+    if(KeepPos>=0&&track==KeepTrack){
+        double step=16000.0/rate;
+        for(NSInteger i=0;i<frames;i++){NSInteger k=(NSInteger)(KeepPos+i*step);int16_t v=k<len?TIOKeepAliveClip[k]:0;for(NSInteger c=0;c<channels;c++)out[i*channels+c]=v;}
+        KeepPos+=frames*step;if(KeepPos>=len)KeepPos=-1;
+    }
+    os_unfair_lock_unlock(&KeepLock);
+}
 BOOL TIOLocalListenSilenceCloud(void){return [Prefs objectForKey:TIOLocalListenSilenceCloudKey]?[Prefs boolForKey:TIOLocalListenSilenceCloudKey]:YES;}
 // The last 15 s of untouched Agora input, for working out the channel layout offline.
 static NSMutableData *RawRecent;static NSString *RawFormat;
@@ -224,7 +247,8 @@ static BOOL HookAgora(NSMutableString *inv){
         // Only during a CC session: the voice assistant uses this same stream, and silence
         // there makes its recognizer return "you".
         NSMutableData *silence=nil;
-        if(Active&&data&&samples>0&&samples<=96000&&TIOLocalListenAutoEnabled()&&TIOLocalListenSilenceCloud()&&TIOLocalGlassesSessionOpen()){silence=[NSMutableData dataWithLength:(NSUInteger)samples*2];data=silence.mutableBytes;}
+        if(Active&&data&&samples>0&&samples<=96000&&TIOLocalListenAutoEnabled()&&TIOLocalListenSilenceCloud()&&TIOLocalGlassesSessionOpen()){silence=[NSMutableData dataWithLength:(NSUInteger)samples*2];data=silence.mutableBytes;
+            if(TIOLocalListenKeepAlive()&&channels>=1&&channels<=2&&samples%channels==0&&rate>=8000&&rate<=48000)KeepAlive(data,samples/channels,rate,channels,track);}
         return ((int(*)(id,SEL,void *,NSInteger,NSInteger,NSInteger,NSInteger,NSTimeInterval))original)(obj,sel,data,samples,rate,channels,track,ts);
     }));
     [inv appendFormat:@"\nAgoraRtcEngineKit\n  -%@ %s  [observed]\n",NSStringFromSelector(sel),method_getTypeEncoding(m)];

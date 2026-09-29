@@ -46,6 +46,9 @@ FOUNDATION_EXPORT NSString *TIOLocalListenTranscript(void);
 FOUNDATION_EXPORT void TIOLocalListenClearTranscript(void);
 // Privacy: audio pushed to the official cloud is replaced with silence (on unless turned off).
 FOUNDATION_EXPORT NSString *const TIOLocalListenSilenceCloudKey;
+// While silenced, a spoken "Okay." every 5 minutes keeps the caption provider from ending the session at 30 minutes.
+FOUNDATION_EXPORT NSString *const TIOLocalListenKeepAliveKey;
+FOUNDATION_EXPORT BOOL TIOLocalListenKeepAlive(void);
 FOUNDATION_EXPORT NSString *const TIOLocalListenTargetLanguageKey;
 FOUNDATION_EXPORT BOOL TIOLocalListenSilenceCloud(void);
 // Local captions on the glasses (LocalGlasses.m).
