@@ -283,6 +283,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
     if([r[@"key"] isEqual:@"archive"])c.detailTextLabel.text=@"Export Markdown and JSON together";
     if([r[@"key"] isEqual:@"localListen"])c.detailTextLabel.text=@"Observe glasses audio and protocol messages";
     if([r[@"key"] isEqual:@"captions"])c.detailTextLabel.text=TIOLocalListenAutoEnabled()?[NSString stringWithFormat:@"On · %@",[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==1?@"Script":[[[NSUserDefaults alloc]initWithSuiteName:@"io.turboio.official-private-addon"] integerForKey:TIOLocalListenModeKey]==2?@"Cues":@"Translation"]:@"Off · your own captions, translation, script or Live Cues on the glasses";
+    if([r[@"key"] isEqual:@"sessions"])c.detailTextLabel.text=@"Local Captions, translation, script and Cues sessions · share transcript or audio";
     if([r[@"key"] isEqual:@"teleRescue"]){BOOL on=TIOTeleFollowEnabled();c.detailTextLabel.text=on?@"On · when voice tracking in the official teleprompter loses your place, the whole script is searched and the highlight jumps there":@"Off · the official teleprompter follows your voice on its own";UISwitch *s=[UISwitch new];s.on=on;[s addTarget:self action:@selector(teleRescue:) forControlEvents:UIControlEventValueChanged];c.accessoryView=s;c.accessoryType=UITableViewCellAccessoryNone;c.selectionStyle=UITableViewCellSelectionStyleNone;}
     if([r[@"key"] isEqual:@"capture"])c.detailTextLabel.text=@"Saves only future Lifelog text; does not start the microphone";
     if([r[@"key"] isEqual:@"status"])c.accessoryType=UITableViewCellAccessoryNone;
@@ -336,6 +337,7 @@ static void AlwaysOnHook(id self,SEL cmd,id value) {
 #endif
     if([r[@"key"] isEqual:@"localListen"]){[self.navigationController pushViewController:TIOLocalListenDeveloperController() animated:YES];return;}
     if([r[@"key"] isEqual:@"captions"]){[self.navigationController pushViewController:TIOLocalListenController() animated:YES];return;}
+    if([r[@"key"] isEqual:@"sessions"]){[self.navigationController pushViewController:TIOSessionsController() animated:YES];return;}
     if([@[@"thinking",@"exit",@"capture",@"teleRescue"] containsObject:r[@"key"]])return;
     NSInteger section=[r[@"section"] integerValue],row=[r[@"row"] integerValue];
     if(section>=0){[self legacySelect:tableView at:[NSIndexPath indexPathForRow:row inSection:section]];return;}

@@ -1,3 +1,4 @@
+#import "LocalSessions.h"
 #import "LocalListen.h"
 #import "LocalASR.h"
 #import <dlfcn.h>
@@ -42,6 +43,7 @@ static void SetStatus(NSString *s){
 NSArray<NSString *> *TIOLocalListenAutoLog(void){os_unfair_lock_lock(&TextLock);NSArray *l=[Log copy]?:@[];os_unfair_lock_unlock(&TextLock);return l;}
 double TIOLocalListenAutoPeak(void){return Peak;}
 static void Remember(NSData *pcm){
+    TIOSessionAudio(pcm);
     if(!Recent)Recent=[NSMutableData new];[Recent appendData:pcm];
     if(Recent.length>15*32000)[Recent replaceBytesInRange:NSMakeRange(0,Recent.length-15*32000) withBytes:NULL length:0];
     const int16_t *s=pcm.bytes;int16_t m=0;for(NSUInteger i=0;i<pcm.length/2;i++){int16_t v=(int16_t)(s[i]<0?-s[i]:s[i]);if(v>m)m=v;}
@@ -56,6 +58,7 @@ static void SaveRecent(void){
 NSString *TIOLocalListenAutoStatus(void){os_unfair_lock_lock(&TextLock);NSString *s=Status;os_unfair_lock_unlock(&TextLock);return s;}
 NSString *const TIOLocalListenTranscriptKey=@"localListenTranscript";
 void TIOLocalListenAppendText(NSString *text,BOOL final){
+    if(final)TIOSessionText(text);
     if([Prefs objectForKey:TIOLocalListenTranscriptKey]&&![Prefs boolForKey:TIOLocalListenTranscriptKey])return;
     os_unfair_lock_lock(&TextLock);if(!Lines)Lines=[NSMutableArray new];
     if(final){Partial=nil;[Lines addObject:[text copy]];if(Lines.count>50)[Lines removeObjectAtIndex:0];}else Partial=[text copy];
@@ -86,7 +89,7 @@ BOOL TIOLocalListenIsAutoTrigger(NSString *key,NSString *chosen){
 }
 static void Stop(NSString *why){
     if(!ASR)return;
-    [ASR stop];ASR=nil;[Hints stop];Hints=nil;[Src stop];Src=nil;Trigger=nil;SaveRecent();TIOLocalListenSaveRaw();
+    [ASR stop];ASR=nil;[Hints stop];Hints=nil;[Src stop];Src=nil;Trigger=nil;SaveRecent();TIOSessionEnd();TIOLocalListenSaveRaw();
     if(Opus){OpusDestroyFn destroy=(OpusDestroyFn)dlsym(RTLD_DEFAULT,"opus_decoder_destroy");if(destroy)destroy(Opus);Opus=NULL;}
     SetStatus(why);
 }
@@ -108,6 +111,7 @@ static void Start(NSString *key){
     if(script)TIOLocalScriptStart([Prefs stringForKey:TIOLocalListenScriptKey]?:@"");
     __weak TIOLocalASR *weak=asr;
     asr.onStatus=^(NSString *s){dispatch_async(Q,^{if(ASR&&ASR==weak&&!Undecodable)SetStatus([@"Following Live Captions · " stringByAppendingString:s]);});};
+    TIOSessionBegin(cues?@"Cues":script?@"Script":glassesTarget?@"Translation":@"Captions",glassesTarget?[NSString stringWithFormat:@"%@ to %@",kind,glassesTarget]:kind);
     SetStatus([@"Engine: " stringByAppendingString:glassesTarget?[NSString stringWithFormat:@"%@ to %@ (glasses CC setting)",kind,glassesTarget]:kind]);
     // OpenAI Translate sends its source transcript only now and then, so while translating
     // the original comes from OpenAI Live on the same audio and Translate gives the translation.

@@ -17,6 +17,8 @@ xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation HomeTabLayo
 ./build/home-tab-layout-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation ResearchCatalog.m ResearchCatalogTests.m -o build/research-catalog-tests
 ./build/research-catalog-tests
+xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation LocalSessions.m LocalSessionsTests.m -o build/local-sessions-tests
+./build/local-sessions-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -framework Foundation NewsPresentation.m NewsPresentationTests.m -o build/news-presentation-tests
 ./build/news-presentation-tests
 xcrun clang -fobjc-arc -fmodules -Wall -Wextra -Wno-unused-parameter -Wno-incompatible-pointer-types -framework Foundation Core.m Profile.m Tests.m -o build/core-tests

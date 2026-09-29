@@ -83,6 +83,8 @@ FOUNDATION_EXPORT NSDictionary *TIOTeleFollowDiagnostics(void);
 // Rescue switch in Research, Glasses Captions. On by default; off leaves the official matcher alone.
 FOUNDATION_EXPORT BOOL TIOTeleFollowEnabled(void);
 FOUNDATION_EXPORT void TIOTeleFollowSetEnabled(BOOL on);
+// Saved glasses sessions page (LocalSessionsUI.m); the store is in LocalSessions.h.
+FOUNDATION_EXPORT UIViewController *TIOSessionsController(void);
 FOUNDATION_EXPORT NSString *TIOLocalCuesStatus(void);
 FOUNDATION_EXPORT NSDictionary *TIOLocalCuesDiagnostics(void);
 FOUNDATION_EXPORT NSString *TIOLocalGlassesStatus(void);

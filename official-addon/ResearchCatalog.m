@@ -9,6 +9,7 @@ NSArray<NSDictionary *> *TIOResearchSections(NSString *page){
         @{@"title":@"Glasses Captions",@"rows":@[Row(@"captions",@"Local Captions & Script",@"captions.bubble",-8,0),Row(@"teleRescue",@"Teleprompter Rescue",@"text.viewfinder",-9,0)]},
         @{@"title":@"Voice & Context",@"rows":@[Row(@"exit",@"Voice Exit",@"waveform",0,6),Row(@"prompt",@"Profile & Prompt",@"text.bubble",0,5),Row(@"history",@"Current Chat Context",@"clock.arrow.circlepath",0,4)]}];
     if([page isEqual:@"library"])return @[
+        @{@"title":@"Glasses Sessions",@"rows":@[Row(@"sessions",@"Sessions by Day",@"calendar",-10,0)]},
         @{@"title":@"Maps & Glasses Navigation",@"rows":@[Row(@"navigation",@"Walking / Cycling / Driving Navigation",@"map",-3,0)]},
         @{@"title":@"Recordings & Summaries",@"rows":@[Row(@"recordings",@"Recordings & File Sharing",@"waveform",-1,0),Row(@"summary",@"Transcript Summary",@"text.badge.star",-1,1)]},
         @{@"title":@"Lifelog",@"rows":@[Row(@"lifelogText",@"Saved Text",@"doc.text",-1,2),Row(@"lifelogAudio",@"Audio Saving & Sharing",@"waveform.circle",-1,3),Row(@"capture",@"Save Future Final Text",@"square.and.arrow.down",1,0),Row(@"archive",@"Export Text Archive",@"square.and.arrow.up",1,1)]}];
