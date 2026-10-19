@@ -10,6 +10,7 @@ static inline NSString *TIOHostExpectedUUID(NSDictionary *info) {
     if([version isEqual:@"1.0.4"]&&[build isEqual:@"195"])return @"261C8E78-F955-3D7D-85F7-13B9082972CF";
     if([version isEqual:@"1.0.5"]&&[build isEqual:@"201"])return @"748FD301-DA60-3095-A244-9BD0558FACA5";
     if([version isEqual:@"1.0.6"]&&[build isEqual:@"218"])return @"98A03B57-E816-3BA1-9778-E55FABE8D762";
+    if([version isEqual:@"1.0.7"]&&[build isEqual:@"230"])return @"410DEFDB-F937-39EA-ACF2-F616ABFF9D0B";
     return nil;
 }
 static inline BOOL TIOHostImageMatches(const struct mach_header *h,NSDictionary *info) {
