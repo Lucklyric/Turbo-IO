@@ -9,6 +9,10 @@
 // ahead or goes back is lost. When it has been silent while speech keeps arriving, this follows
 // the reader instead: near the cursor first, then across the whole script, and sends the same
 // type 8 message. Official messages are never blocked or changed. Main thread only.
+// When the official app restarts its recognizer (after about 8 s without a result, mostly on a
+// weak network) it resumes from its own offset, which can be ahead of the reader. A gap of 6 s
+// or more in recognizer results is taken as such a restart: the speech after it is matched in
+// both directions and across the script with less evidence, until the reader is found again.
 static NSString *Script,*Did,*ScriptDid,*ScriptDir;
 static NSUInteger ScriptGen;
 static NSData *ScriptBytes;
@@ -17,16 +21,18 @@ static NSArray<NSNumber *> *LineStarts;
 static NSDictionary *Route;
 static NSInteger Width=492,FontSize=18;
 static BOOL Voice,Sending;
-static NSUInteger Cursor,SentCount,Rescues;
-static NSTimeInterval OfficialAt,SentAt;
+static NSUInteger Cursor,SentCount,Rescues,Resyncs;
+static NSTimeInterval OfficialAt,SentAt,HeardAt,ResyncAt;
+static BOOL Resync;
 static NSMutableArray<NSString *> *Heard;
 static NSString *Partial;
-static NSMutableArray *Log;
+static NSMutableArray *Log,*Restarts;
 static NSTimeInterval Now(void){return NSProcessInfo.processInfo.systemUptime;}
 static id Get(id o,NSString *k){@try{return [o valueForKey:k];}@catch(NSException *e){return nil;}}
 static NSData *Bytes(id o){if([o isKindOfClass:NSData.class])return o;id b=Get(o,@"data");return [b isKindOfClass:NSData.class]?b:nil;}
-static void Note(NSString *s){if(!Log)Log=[NSMutableArray new];[Log addObject:[NSString stringWithFormat:@"%.1f %@",Now(),s]];if(Log.count>40)[Log removeObjectAtIndex:0];}
-NSDictionary *TIOTeleFollowDiagnostics(void){return @{@"script":@(ScriptBytes.length),@"scriptMatchesSession":@([ScriptDid isEqual:Did]),@"voice":@(Voice),@"did":@(Did.length>0),@"route":@(Route!=nil),@"cursor":@(Cursor),@"sent":@(SentCount),@"rescues":@(Rescues),@"log":Log?:@[]};}
+static void Note(NSString *s){if(!Log)Log=[NSMutableArray new];[Log addObject:[NSString stringWithFormat:@"%.1f %@",Now(),s]];if(Log.count>200)[Log removeObjectAtIndex:0];}
+NSDictionary *TIOTeleFollowDiagnostics(void){return @{@"script":@(ScriptBytes.length),@"scriptMatchesSession":@([ScriptDid isEqual:Did]),@"voice":@(Voice),@"did":@(Did.length>0),@"route":@(Route!=nil),@"cursor":@(Cursor),@"sent":@(SentCount),@"rescues":@(Rescues),@"resyncs":@(Resyncs),@"restarts":Restarts?:@[],@"log":Log?:@[]};}
+static NSString *Clock(void){static NSDateFormatter *f;if(!f){f=[NSDateFormatter new];f.dateFormat=@"HH:mm:ss";}return [f stringFromDate:NSDate.date];}
 
 // Visual lines as the glasses wrap them: about 0.53 of the font size per unit of width,
 // CJK counting double. Calibrated on the official pageOffset values.
@@ -123,7 +129,10 @@ static NSTimeInterval BusyAt;
 static void Follow(void){
     NSTimeInterval now=Now();
     // The official matcher is keeping up: leave it alone.
-    if(!Voice||!TIOTeleFollowEnabled()||!Tokens.length||![ScriptDid isEqual:Did]||now-OfficialAt<1.2||now-SentAt<0.25)return;
+    if(Resync&&now-ResyncAt>20){Resync=NO;Note(@"resync expired");}
+    // After a restart, an official matcher that has not moved since is not keeping up.
+    BOOL resync=Resync,stuck=resync&&OfficialAt<ResyncAt;
+    if(!Voice||!TIOTeleFollowEnabled()||!Tokens.length||![ScriptDid isEqual:Did]||(!stuck&&now-OfficialAt<1.2)||now-SentAt<0.25)return;
     // A match that has not come back in 2 s is given up, so following never stalls.
     if(Busy&&now-BusyAt<2){Again=YES;return;}
     NSMutableArray *window=[Heard mutableCopy];if(Partial.length)[window addObject:Partial];
@@ -132,15 +141,15 @@ static void Follow(void){
     NSData *tokens=[Tokens copy];NSUInteger cursor=Cursor;NSTimeInterval official=OfficialAt,started=now;NSUInteger gen=ScriptGen;Busy=YES;BusyAt=now;
     dispatch_async(Q,^{
         const TIOToken *t=tokens.bytes;NSUInteger n=tokens.length/sizeof(TIOToken),anchor=TokenAt(t,n,cursor),end=0;double score=0;BOOL jump=NO;
-        // Near the cursor first, forward only.
+        // Near the cursor first, forward only (both ways after a restart).
         TIOPolicyResult r=TIOAlignSpeech(t,n,spoken,anchor);
-        if(r.accepted&&r.end>anchor)end=r.end;
+        if(r.accepted&&(r.end>anchor||(resync&&r.end!=anchor))){end=r.end;jump=resync&&r.end<anchor;score=r.score;}
         else{
             // Then the whole script: a longer, closer, unambiguous match well away from the cursor.
             NSData *tail=TIOSpeechTail(spoken,32);NSUInteger m=tail.length/sizeof(TIOToken);
-            TIOAlignment a=m>=20?TIOAlign(t,n,tail.bytes,m,1,n,anchor):(TIOAlignment){NO,0,0,NO};
+            TIOAlignment a=m>=(resync?12:20)?TIOAlign(t,n,tail.bytes,m,1,n,anchor):(TIOAlignment){NO,0,0,NO};
             score=a.found?1.0-(double)a.distance/(double)m:0;
-            if(a.found&&!a.ambiguous&&score>=0.7&&(a.end>anchor?a.end-anchor:anchor-a.end)>=24){end=a.end;jump=YES;}
+            if(a.found&&!a.ambiguous&&score>=(resync?0.75:0.7)&&(a.end>anchor?a.end-anchor:anchor-a.end)>=(resync?1:24)){end=a.end;jump=YES;}
         }
         NSUInteger byte=end?t[end-1].byteEnd:0;
         dispatch_async(dispatch_get_main_queue(),^{
@@ -148,7 +157,8 @@ static void Follow(void){
             Busy=NO;
             if(byte&&OfficialAt==official&&gen==ScriptGen){
                 NSUInteger h=Snap(byte);
-                if(jump){Rescues++;[Heard removeAllObjects];Partial=nil;SendHighlight(h,[NSString stringWithFormat:@"search %.2f",score]);}
+                if(resync&&h!=Cursor){Resync=NO;Resyncs++;[Heard removeAllObjects];Partial=nil;SendHighlight(h,[NSString stringWithFormat:@"resync %.2f from %lu",score,(unsigned long)Cursor]);}
+                else if(jump){Rescues++;[Heard removeAllObjects];Partial=nil;SendHighlight(h,[NSString stringWithFormat:@"search %.2f",score]);}
                 else if(h>Cursor)SendHighlight(h,@"follow");
             }
             if(Again){Again=NO;Follow();}
@@ -158,6 +168,13 @@ static void Follow(void){
 void TIOTeleFollowHeard(NSString *text,BOOL final){
     if(!NSThread.isMainThread){dispatch_async(dispatch_get_main_queue(),^{TIOTeleFollowHeard(text,final);});return;}
     if(![text isKindOfClass:NSString.class])return;if(!Heard)Heard=[NSMutableArray new];
+    // Speech from before a gap belongs to an earlier place in the script.
+    NSTimeInterval now=Now(),gap=HeardAt?now-HeardAt:0;HeardAt=now;
+    if(Voice&&gap>=6){
+        Resync=YES;ResyncAt=now;[Heard removeAllObjects];Partial=nil;
+        NSString *e=[NSString stringWithFormat:@"%@ recognizer resumed after %.0f s, cursor %lu",Clock(),gap,(unsigned long)Cursor];
+        if(!Restarts)Restarts=[NSMutableArray new];[Restarts addObject:e];if(Restarts.count>50)[Restarts removeObjectAtIndex:0];Note(e);
+    }
     if(final){Partial=nil;if(text.length)[Heard addObject:text];while(Heard.count>3)[Heard removeObjectAtIndex:0];}else Partial=[text copy];
     Follow();
 }
