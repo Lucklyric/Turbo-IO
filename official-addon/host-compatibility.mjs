@@ -5,6 +5,7 @@ export const inspectedHosts = Object.freeze([
   Object.freeze({version:'1.0.5',build:'201',uuid:'748fd301da603095a2449bd0558faca5'}),
   Object.freeze({version:'1.0.6',build:'218',uuid:'98a03b57e8163ba19778e55fabe8d762'}),
   Object.freeze({version:'1.0.7',build:'230',uuid:'410defdbf93739eaacf2f616abff9d0b'}),
+  Object.freeze({version:'1.0.10',build:'258',uuid:'f5efecca88d93bb6a53ddf6acdfcc928'}),
 ]);
 export function inspectedHost(info, uuid) {
   if(info.CFBundleIdentifier!=='com.rayneo.venus.pub'||info.CFBundleExecutable!=='Runner')return null;
